@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useInView } from "react-intersection-observer";
-import { MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info } from "lucide-react"; // Modern Icons
+import { MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info, Heart, Loader2 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client"; // Import Supabase
+import { useRouter } from "next/navigation";
 
 interface Restaurant {
   place_id: string;
@@ -13,7 +15,6 @@ interface Restaurant {
   distance_miles: number | null;
   is_open_now: boolean | null;
   hours_schedule: string[];
-  // Cache Fields
   ai_safety_score?: number | null;
   ai_summary?: string | null;
   relevant_count?: number;
@@ -21,7 +22,7 @@ interface Restaurant {
 }
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
-  // State initialization
+  // Data State
   const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
   const [relevantCount, setRelevantCount] = useState<number | null>(place.relevant_count ?? null);
   const [summary, setSummary] = useState<string | null>(place.ai_summary ?? null);
@@ -29,9 +30,62 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
   const [hasFetched, setHasFetched] = useState(place.is_cached || false);
   const [safeBitesScore, setSafeBitesScore] = useState<number | null>(null);
 
-  const { ref, inView } = useInView({ triggerOnce: true, threshold: 0.1 });
+  // Favorite State
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favLoading, setFavLoading] = useState(false);
 
-  // Scoring Logic (Client-side mirror of backend)
+  const { ref, inView } = useInView({ triggerOnce: true, threshold: 0.1 });
+  const supabase = createClient();
+  const router = useRouter();
+
+  // --- 1. CHECK IF FAVORITED ON LOAD ---
+  useEffect(() => {
+    const checkFavorite = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("favorites")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("place_id", place.place_id)
+        .single();
+
+      if (data) setIsFavorite(true);
+    };
+    checkFavorite();
+  }, [place.place_id]);
+
+  // --- 2. HANDLE CLICK ---
+  const toggleFavorite = async () => {
+    setFavLoading(true);
+    
+    // Check if user is logged in
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push("/login"); // Redirect if not logged in
+      return;
+    }
+
+    if (isFavorite) {
+      // Remove
+      await supabase
+        .from("favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("place_id", place.place_id);
+      setIsFavorite(false);
+    } else {
+      // Add
+      await supabase
+        .from("favorites")
+        .insert({ user_id: user.id, place_id: place.place_id });
+      setIsFavorite(true);
+    }
+    setFavLoading(false);
+  };
+
+  // Score Logic
   const calculateSafeBitesScore = (aiScore: number, revCount: number, googleRating: number, dist: number | null) => {
     if (revCount === 0) return null;
     const safetyPoints = aiScore * 6;
@@ -42,7 +96,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
     return parseFloat(((safetyPoints + confidencePoints + qualityPoints + distancePoints) / 10).toFixed(1));
   };
 
-  // Effects
   useEffect(() => {
     if (place.is_cached && place.ai_safety_score) {
       const sbScore = calculateSafeBitesScore(place.ai_safety_score, place.relevant_count || 0, place.rating, place.distance_miles);
@@ -73,7 +126,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
     }
   }, [inView, hasFetched, place]);
 
-  // Modern Color Palette
   const getScoreColor = (score: number) => {
     if (score >= 8.5) return "bg-emerald-50 text-emerald-700 border-emerald-200 ring-1 ring-emerald-100";
     if (score >= 7.0) return "bg-blue-50 text-blue-700 border-blue-200";
@@ -82,12 +134,26 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
   };
 
   return (
-    <div ref={ref} className="group bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-xl transition-all duration-300 overflow-hidden">
+    <div ref={ref} className="group bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-xl transition-all duration-300 overflow-hidden relative">
+      
+      {/* HEART BUTTON (Top Right Absolute) */}
+      <button 
+        onClick={toggleFavorite}
+        disabled={favLoading}
+        className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/80 backdrop-blur-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"
+      >
+        {favLoading ? (
+            <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        ) : (
+            <Heart 
+                className={`w-5 h-5 transition-colors ${isFavorite ? "fill-red-500 text-red-500" : "text-slate-400 hover:text-red-400"}`} 
+            />
+        )}
+      </button>
+
       <div className="p-6">
         <div className="flex justify-between items-start gap-4">
-          
-          {/* LEFT: Restaurant Info */}
-          <div className="flex-1">
+          <div className="flex-1 pr-10"> {/* pr-10 prevents text from overlapping the heart */}
             <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover:text-green-700 transition-colors">
               {place.name}
             </h2>
@@ -107,56 +173,55 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
               </span>
             </div>
           </div>
-
-          {/* RIGHT: The Score Badge */}
-          <div className="flex-shrink-0 text-right">
-            {loading ? (
-              <div className="w-16 h-12 bg-slate-100 rounded-lg animate-pulse" />
-            ) : safeBitesScore !== null ? (
-              <div className="flex flex-col items-center justify-center bg-green-50 border border-green-100 px-3 py-2 rounded-xl">
-                <span className="text-3xl font-black text-green-600 leading-none tracking-tight">{safeBitesScore}</span>
-                <span className="text-[10px] font-bold text-green-800 uppercase tracking-widest mt-1">Score</span>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center bg-slate-50 border border-slate-100 px-3 py-2 rounded-xl">
-                <span className="text-xl font-bold text-slate-300">--</span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">No Data</span>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* BOTTOM: AI Analysis Area */}
       <div className="bg-slate-50/50 border-t border-slate-100 p-5">
-        {loading ? (
-          <div className="space-y-2 opacity-50">
-            <div className="h-2 bg-slate-200 rounded w-1/3 animate-pulse" />
-            <div className="h-2 bg-slate-200 rounded w-2/3 animate-pulse" />
-          </div>
-        ) : !place.is_cached && !hasFetched ? (
-          <p className="text-xs text-slate-400 italic flex items-center gap-2">
-            <Info className="w-3 h-3" /> Scroll to trigger AI analysis...
-          </p>
-        ) : relevantCount === 0 ? (
-          <div className="flex items-start gap-3 opacity-70">
-            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-slate-500">
-              No specific reviews found mentioning "gluten" or "celiac".
-            </p>
-          </div>
-        ) : safeBitesScore !== null ? (
-          <div className={`p-4 rounded-xl border ${getScoreColor(safeBitesScore)}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldCheck className="w-4 h-4" />
-              <span className="text-xs font-bold uppercase tracking-wide opacity-90">AI Safety Analysis</span>
-              <span className="text-xs ml-auto opacity-70">Based on {relevantCount} reviews</span>
+        <div className="flex items-start justify-between">
+            {/* Score Badge */}
+            <div className="flex-shrink-0 mr-4">
+                 {loading ? (
+                  <div className="w-16 h-12 bg-slate-200 rounded-lg animate-pulse" />
+                ) : safeBitesScore !== null ? (
+                  <div className="flex flex-col items-center justify-center bg-white border border-green-200 px-3 py-2 rounded-xl shadow-sm">
+                    <span className="text-2xl font-black text-green-600 leading-none">{safeBitesScore}</span>
+                    <span className="text-[9px] font-bold text-green-800 uppercase tracking-widest mt-0.5">Score</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center bg-white border border-slate-200 px-3 py-2 rounded-xl">
+                    <span className="text-lg font-bold text-slate-300">--</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">No Data</span>
+                  </div>
+                )}
             </div>
-            <p className="text-sm leading-relaxed opacity-95">
-              {summary}
-            </p>
-          </div>
-        ) : null}
+
+            {/* AI Summary */}
+            <div className="flex-1">
+                {loading ? (
+                <div className="space-y-2 mt-1">
+                    <div className="h-2 bg-slate-200 rounded w-1/3 animate-pulse" />
+                    <div className="h-2 bg-slate-200 rounded w-2/3 animate-pulse" />
+                </div>
+                ) : !place.is_cached && !hasFetched ? (
+                <p className="text-xs text-slate-400 italic flex items-center gap-2 mt-2">
+                    <Info className="w-3 h-3" /> Scroll to trigger AI analysis...
+                </p>
+                ) : relevantCount === 0 ? (
+                <div className="flex items-start gap-2 mt-1">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-slate-500">
+                    No reviews found mentioning "gluten".
+                    </p>
+                </div>
+                ) : safeBitesScore !== null ? (
+                <div className={`p-3 rounded-xl border ${getScoreColor(safeBitesScore)}`}>
+                    <p className="text-sm leading-relaxed opacity-95">
+                    {summary}
+                    </p>
+                </div>
+                ) : null}
+            </div>
+        </div>
       </div>
     </div>
   );

@@ -126,30 +126,34 @@ def calculate_safebites_score(ai_score, rev_count, google_rating, dist_miles):
 
 # This logic lives outside the endpoint so we can "wrap" it in the cache
 @lru_cache(maxsize=100) # Remembers the last 100 distinct searches in memory
-def fetch_google_search(query: str, location: str):
-    if not GOOGLE_KEY:
-        raise Exception("Google API Key not configured")
+def fetch_google_search(query: str, location: str, lat: float = None, lng: float = None):
+    # Base query without the specific address if we have coords
+    if lat and lng:
+        text_query = f"{query} gluten-free"
+    else:
+        # Fallback to text location if we couldn't geocode
+        text_query = f"{query} gluten-free in {location}"
 
-    # Force "gluten free" into the query for better relevance
-    text_query = f"{query} gluten-free in {location}"
-    
     url = "https://places.googleapis.com/v1/places:searchText"
-    
-    headers = {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": GOOGLE_KEY,
-        # FieldMask: Only ask for what we need to save costs
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.id,places.location,places.regularOpeningHours"
-    }
+    field_mask = "places.displayName,places.formattedAddress,places.rating,places.id,places.location,places.regularOpeningHours,places.businessStatus"
+    headers = {"Content-Type": "application/json", "X-Goog-Api-Key": GOOGLE_KEY, "X-Goog-FieldMask": field_mask}
     
     payload = {
-        "textQuery": text_query,
-        "minRating": 3.5,  # Filter out bad places automatically
-        "maxResultCount": 10 # Limit to 10 to save bandwidth/cost
+        "textQuery": text_query, 
+        "minRating": 3.5, 
+        "maxResultCount": 10
     }
 
-    response = requests.post(url, json=payload, headers=headers)
-    return response.json()
+    # If we have coordinates, add Location Bias (Circle with ~3 mile radius)
+    if lat and lng:
+        payload["locationBias"] = {
+            "circle": {
+                "center": {"latitude": lat, "longitude": lng},
+                "radius": 5000.0 # 5km radius bias (doesn't hard filter, just biases)
+            }
+        }
+
+    return requests.post(url, json=payload, headers=headers).json()
 
 
 def fetch_serpapi_reviews(place_id: str):
@@ -213,7 +217,7 @@ def search_restaurants(search: SearchRequest):
          raise HTTPException(status_code=400, detail="Must provide location or address")
 
     # 2. Fetch from Google
-    google_data = fetch_google_search(search.query, search_location)
+    google_data = fetch_google_search(search.query, search_location, user_lat, user_lon)
     
     raw_results = []
     place_ids = []
