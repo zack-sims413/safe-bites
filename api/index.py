@@ -65,7 +65,7 @@ def fetch_google_search(query: str, location: str):
         "Content-Type": "application/json",
         "X-Goog-Api-Key": GOOGLE_KEY,
         # FieldMask: Only ask for what we need to save costs
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.id,places.location,places.shortFormattedAddress"
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.id,places.location,places.regularOpeningHours"
     }
     
     payload = {
@@ -151,6 +151,10 @@ def search_restaurants(search: SearchRequest):
                 if len(parts) >= 2:
                     city_extracted = parts[-3].strip() if len(parts) > 3 else parts[1].strip()
 
+            # UPDATED: Extract Opening Hours
+            opening_hours = place.get("regularOpeningHours", {})
+            weekday_text = opening_hours.get("weekdayDescriptions", [])
+
             results.append({
                 "name": place.get("displayName", {}).get("text", "Unknown"),
                 "address": address_str,
@@ -158,7 +162,8 @@ def search_restaurants(search: SearchRequest):
                 "rating": place.get("rating", 0.0), # Just one rating now
                 "place_id": place.get("id"),
                 "location": {"lat": lat, "lng": lng},
-                "distance_miles": round(dist, 2) if dist else None
+                "distance_miles": round(dist, 2) if dist else None,
+                "hours_schedule": weekday_text # List of strings ["Mon: 9am-5pm", ...]
             })
 
     # 3. Sort by Distance (if available) or Rating
@@ -172,35 +177,41 @@ def search_restaurants(search: SearchRequest):
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
     """
-    Fetches ONLY relevant reviews using SerpApi's filtering.
+    Fetches ONLY relevant reviews, calculates stats, and returns detailed list.
     """
-    # 1. Call SerpApi
     raw_reviews = fetch_serpapi_reviews(req.place_id)
     
     processed_reviews = []
+    total_rating_sum = 0
+    relevant_count = 0
     
-    # 2. Process the results
-    # Since we already asked SerpApi to filter for "gluten/celiac", 
-    # nearly all returned reviews should be relevant.
     for r in raw_reviews:
-        # SerpApi review structure is slightly different than Google's
-        # It usually has 'snippet' (the text) and 'rating'
-        
         text_content = r.get("snippet", "")
-        if not text_content:
-            continue # Skip empty reviews
+        rating = r.get("rating", 0)
+        
+        if not text_content: continue 
+
+        # We are confident these are relevant because of the SerpApi query
+        relevant_count += 1
+        total_rating_sum += rating
 
         processed_reviews.append({
             "source": "Google",
             "text": text_content,
-            "rating": r.get("rating", 0),
+            "rating": rating,
             "author": r.get("user", {}).get("name", "Anonymous"),
             "date": r.get("date", ""),
-            "relevant": True # We assume true because we searched for keywords!
+            "relevant": True
         })
+
+    # UPDATED: Calculate Average "Safety" Rating
+    avg_safety_rating = 0
+    if relevant_count > 0:
+        avg_safety_rating = round(total_rating_sum / relevant_count, 1)
 
     return {
         "reviews": processed_reviews, 
-        "count": len(processed_reviews),
-        "note": "Reviews filtered for 'gluten celiac'"
+        "relevant_count": relevant_count, # NEW: Number of reviews found
+        "average_safety_rating": avg_safety_rating, # NEW: The "Gluten Score"
+        "note": "Metrics derived from filtered gluten-related reviews"
     }
