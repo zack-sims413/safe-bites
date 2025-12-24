@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { User } from "@supabase/supabase-js";
 import { Search, MapPin, Loader2 } from "lucide-react";
-import RestaurantCard from "@/components/RestaurantCard";
-import { createClient } from "@/utils/supabase/client";
+import RestaurantCard from "../components/RestaurantCard";
+import { createClient } from "../utils/supabase/client";
 
 interface Restaurant {
   place_id: string;

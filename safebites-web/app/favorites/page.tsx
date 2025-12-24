@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/utils/supabase/client";
+import { createClient } from "../../utils/supabase/client";
 import { useRouter } from "next/navigation";
-import RestaurantCard from "@/components/RestaurantCard";
+import RestaurantCard from "../../components/RestaurantCard";
 import Link from "next/link";
 import { Loader2, ArrowLeft } from "lucide-react";
 

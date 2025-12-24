@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/utils/supabase/client";
+import { createClient } from "../../utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
