@@ -20,7 +20,7 @@ interface Restaurant {
   ai_summary?: string | null;
   relevant_count?: number;
   is_cached?: boolean;
-  safe_bites_score?: number;
+  wise_bites_score?: number;
 }
 
 export default function Home() {
@@ -84,7 +84,7 @@ export default function Home() {
       
       {/* NAVBAR */}
       <nav className="flex justify-between items-center px-6 py-4 bg-white border-b border-slate-100 sticky top-0 z-50">
-        <div className="font-extrabold text-green-700 text-xl tracking-tight">SafeBites</div>
+        <div className="font-extrabold text-green-700 text-xl tracking-tight">WiseBites</div>
         <div>
           {user ? (
             <div className="flex items-center gap-6">
@@ -123,10 +123,10 @@ export default function Home() {
       <div className="bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-3xl mx-auto px-6 py-12 md:py-16 text-center">
           <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-4">
-            Safe<span className="text-green-600">Bites</span> 🌾
+            Wise<span className="text-green-600">Bites</span> 🌾
           </h1>
           <p className="text-lg text-slate-500 max-w-lg mx-auto mb-8 leading-relaxed">
-            The AI-powered guide to Celiac-safe dining. We analyze thousands of reviews so you don't have to.
+            Find safer dining options with AI-powered reviews. We analyze thousands of reviews so you don't have to.
           </p>
 
           {/* SEARCH BAR */}
@@ -193,7 +193,7 @@ export default function Home() {
           
           {hasSearched && results.length === 0 && !loading && !error && (
             <div className="text-center py-20 opacity-50">
-              <p className="text-xl font-semibold">No SafeBites found.</p>
+              <p className="text-xl font-semibold">No WiseBiets found.</p>
               <p>Try expanding your search area.</p>
             </div>
           )}
