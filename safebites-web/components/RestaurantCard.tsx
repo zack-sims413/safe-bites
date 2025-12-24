@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useInView } from "react-intersection-observer"; // <--- THE MAGIC HOOK
+import { useInView } from "react-intersection-observer";
 
 interface Restaurant {
   place_id: string;
@@ -12,27 +12,63 @@ interface Restaurant {
   distance_miles: number | null;
   is_open_now: boolean | null;
   hours_schedule: string[];
+  // New Cache Fields
+  ai_safety_score?: number | null;
+  ai_summary?: string | null;
+  relevant_count?: number;
+  is_cached?: boolean;
 }
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
-  // State for AI Data
-  const [safetyScore, setSafetyScore] = useState<number | null>(null);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false); // To ensure we only fetch once
+  // 1. Initialize State: Use cached data if available!
+  const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
+  const [relevantCount, setRelevantCount] = useState<number | null>(place.relevant_count ?? null);
+  const [summary, setSummary] = useState<string | null>(place.ai_summary ?? null);
+  
+  // Only show "loading" state if we don't have the data yet
+  const [loading, setLoading] = useState(!place.is_cached);
+  
+  // If it's cached, we consider it "already fetched"
+  const [hasFetched, setHasFetched] = useState(place.is_cached || false);
+  
+  const [safeBitesScore, setSafeBitesScore] = useState<number | null>(null);
 
-  // The "In View" Hook
-  // ref: Attach this to the HTML element you want to watch
-  // inView: Becomes 'true' when that element enters the screen
-  const { ref, inView } = useInView({
-    triggerOnce: true, // Only fire this event once (don't refetch if they scroll up/down)
-    threshold: 0.1,    // Trigger when 10% of the card is visible
-  });
+  const { ref, inView } = useInView({ triggerOnce: true, threshold: 0.1 });
 
+  const calculateSafeBitesScore = (aiScore: number, revCount: number, googleRating: number, dist: number | null) => {
+    if (revCount === 0) return null;
+
+    const safetyPoints = aiScore * 6; 
+    const confidencePoints = Math.min(revCount, 20); 
+    const qualityPoints = googleRating * 2; 
+    
+    let distancePoints = 5;
+    if (dist !== null) {
+      distancePoints = Math.max(0, 10 - dist); 
+    }
+
+    const total = (safetyPoints + confidencePoints + qualityPoints + distancePoints) / 10;
+    return parseFloat(total.toFixed(1));
+  };
+
+  // 2. EFFECT: Calculate Meta Score immediately if cache exists
   useEffect(() => {
-    // CONDITION: If card is visible (inView) AND we haven't fetched yet...
-    if (inView && !hasFetched) {
-      setHasFetched(true); // Mark as done immediately so we don't double-fire
+    if (place.is_cached && place.ai_safety_score) {
+         const sbScore = calculateSafeBitesScore(
+            place.ai_safety_score, 
+            place.relevant_count || 0, 
+            place.rating, 
+            place.distance_miles
+          );
+          setSafeBitesScore(sbScore);
+    }
+  }, [place]); 
+
+  // 3. EFFECT: Fetch Data if NOT cached and coming into view
+  useEffect(() => {
+    // Crucial: We check !place.is_cached so we don't double-fetch
+    if (inView && !hasFetched && !place.is_cached) {
+      setHasFetched(true);
       setLoading(true);
 
       const fetchSafetyScore = async () => {
@@ -48,8 +84,22 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
           });
           
           const data = await res.json();
-          setSafetyScore(data.ai_safety_score);
+          
+          const aiScore = data.ai_safety_score || 0;
+          const revCount = data.relevant_count || 0;
+
+          setSafetyScore(aiScore);
           setSummary(data.ai_summary);
+          setRelevantCount(revCount);
+
+          const sbScore = calculateSafeBitesScore(
+            aiScore, 
+            revCount, 
+            place.rating, 
+            place.distance_miles
+          );
+          setSafeBitesScore(sbScore);
+
         } catch (err) {
           console.error("Failed to load score", err);
         } finally {
@@ -59,59 +109,85 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
 
       fetchSafetyScore();
     }
-  }, [inView, hasFetched, place.place_id, place.name, place.address]);
+  }, [inView, hasFetched, place]);
 
-  // Color logic
+  // UI Helpers
   const getScoreColor = (score: number) => {
-    if (score >= 8) return "bg-green-100 text-green-800 border-green-200";
-    if (score >= 5) return "bg-yellow-100 text-yellow-800 border-yellow-200";
-    return "bg-red-100 text-red-800 border-red-200";
+    if (score >= 8.5) return "bg-green-100 text-green-800 border-green-200 ring-1 ring-green-400";
+    if (score >= 7.0) return "bg-green-50 text-green-700 border-green-100";
+    if (score >= 5.0) return "bg-yellow-50 text-yellow-700 border-yellow-100";
+    return "bg-red-50 text-red-700 border-red-100";
   };
 
   return (
-    // Attach the 'ref' here so the observer watches this box
-    <div ref={ref} className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-      <div className="flex justify-between items-start">
+    <div ref={ref} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all relative">
+      <div className="flex justify-between items-start mb-4">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">{place.name}</h2>
-          <p className="text-gray-500 text-sm">{place.address}</p>
-          <p className="text-gray-400 text-xs mt-1">
-            {place.city} • {place.distance_miles} miles away
-          </p>
+          <h2 className="text-xl font-bold text-gray-900">{place.name}</h2>
+          <p className="text-gray-600 text-sm">{place.address}</p>
+          <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-600">
+            <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded text-xs">
+              {place.city}
+            </span>
+            {place.distance_miles && (
+                <span className="flex items-center">📍 {place.distance_miles} mi</span>
+            )}
+            <span className="flex items-center text-yellow-600 font-medium">
+               ⭐ {place.rating} (Google)
+            </span>
+          </div>
         </div>
-        <div className="text-right">
-          <div className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded inline-block">
-            Google: {place.rating} ★
-          </div>
-          <div className={`text-xs mt-1 font-medium ${place.is_open_now ? 'text-green-600' : 'text-red-500'}`}>
-            {place.is_open_now ? "Open Now" : "Closed"}
-          </div>
+        
+        <div className="text-right min-w-[80px]">
+           {loading ? (
+             <div className="animate-pulse h-10 w-16 bg-gray-100 rounded ml-auto"></div>
+           ) : safeBitesScore !== null ? (
+             <div className="flex flex-col items-end">
+               <div className="text-3xl font-black text-green-700">{safeBitesScore}</div>
+               <div className="text-[9px] uppercase font-bold text-gray-400 tracking-wider">SafeBites Score</div>
+             </div>
+           ) : (
+             <div className="flex flex-col items-end">
+                <div className="text-lg font-bold text-gray-300">--</div>
+                <div className="text-[9px] uppercase font-bold text-gray-300 tracking-wider">No Data</div>
+             </div>
+           )}
         </div>
       </div>
 
-      {/* THE AI SECTION */}
-      <div className="mt-4 pt-4 border-t border-gray-100 min-h-[80px]"> 
-        {/* min-h preserves space so layout doesn't jump */}
-        
-        {!hasFetched && !loading ? (
-           // State 1: Card is off-screen (or just entered), hasn't loaded yet
-           <p className="text-sm text-gray-400 italic">Scroll to load safety score...</p>
-        ) : loading ? (
-           // State 2: Fetching
-          <div className="animate-pulse flex space-x-4">
-            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+      <div className="mt-4 pt-4 border-t border-gray-100 min-h-[60px]"> 
+        {loading ? (
+          <div className="space-y-2">
+            <div className="h-3 bg-gray-100 rounded w-3/4 animate-pulse"></div>
+            <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse"></div>
           </div>
-        ) : safetyScore !== null ? (
-           // State 3: Done
-          <div className={`p-3 rounded-md border ${getScoreColor(safetyScore)}`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-bold text-sm uppercase tracking-wide">Celiac Safety Score</span>
-              <span className="text-xl font-bold">{safetyScore}/10</span>
+        ) : !place.is_cached && !hasFetched ? (
+           <p className="text-sm text-gray-400 italic flex items-center gap-2">
+             <span className="w-2 h-2 rounded-full bg-gray-300"></span>
+             Scroll to analyze safety...
+           </p>
+        ) : relevantCount === 0 ? (
+          <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+             <p className="text-sm text-gray-500">
+               ⚠️ <span className="font-semibold">Insufficient Data:</span> We couldn't find any reviews mentioning "gluten" or "celiac" here.
+             </p>
+          </div>
+        ) : safeBitesScore !== null ? (
+          <div className={`p-4 rounded-lg border ${getScoreColor(safeBitesScore)}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-sm flex items-center gap-2">
+                🛡️ AI Analysis
+              </span>
+              <span className="text-xs font-medium opacity-80">
+                Found {relevantCount} relevant reviews
+              </span>
             </div>
-            <p className="text-sm opacity-90">{summary}</p>
+            <p className="text-sm leading-relaxed opacity-90">
+              {summary}
+            </p>
           </div>
         ) : (
-          <p className="text-sm text-gray-400">Safety analysis unavailable.</p>
+          <p className="text-sm text-gray-400">Analysis unavailable.</p>
         )}
       </div>
     </div>

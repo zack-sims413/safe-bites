@@ -174,6 +174,13 @@ def search_restaurants(search: SearchRequest):
     user_lat, user_lon = search.user_lat, search.user_lon
     search_location = search.location
 
+    if not user_lat and not user_lon and search_location:
+        lat, lng = geocode_address(search_location)
+        if lat:
+            user_lat, user_lon = lat, lng
+            # print(f"Geocoded '{search_location}' to {user_lat}, {user_lon}") # Debug if needed
+
+    # Fallback: If specific address was passed
     if search.address and (not user_lat or not user_lon):
         lat, lng = geocode_address(search.address)
         if lat:
@@ -183,19 +190,21 @@ def search_restaurants(search: SearchRequest):
     if not search_location and not (user_lat and user_lon):
          raise HTTPException(status_code=400, detail="Must provide location or address")
 
-    # 2. Fetch from Google (Sync is fine since we removed the slow Yelp merge)
+    # 2. Fetch from Google
     google_data = fetch_google_search(search.query, search_location)
     
-    results = []
+    raw_results = []
+    place_ids = []
+
     if "places" in google_data:
         for place in google_data["places"]:
+            pid = place.get("id")
+            if pid: place_ids.append(pid)
+
             lat = place.get("location", {}).get("latitude")
             lng = place.get("location", {}).get("longitude")
-            
-            # Calculate Distance
             dist = calculate_distance(user_lat, user_lon, lat, lng) if user_lat else None
             
-            # Extract City (Simple heuristic)
             address_str = place.get("formattedAddress", "")
             city_extracted = None
             if address_str:
@@ -203,28 +212,84 @@ def search_restaurants(search: SearchRequest):
                 if len(parts) >= 2:
                     city_extracted = parts[-3].strip() if len(parts) > 3 else parts[1].strip()
 
-            # UPDATED: Extract Opening Hours
             opening_hours = place.get("regularOpeningHours", {})
-            weekday_text = opening_hours.get("weekdayDescriptions", [])
 
-            results.append({
+            raw_results.append({
                 "name": place.get("displayName", {}).get("text", "Unknown"),
                 "address": address_str,
                 "city": city_extracted,
-                "rating": place.get("rating", 0.0), # Just one rating now
-                "place_id": place.get("id"),
+                "rating": place.get("rating", 0.0), 
+                "place_id": pid,
                 "location": {"lat": lat, "lng": lng},
                 "distance_miles": round(dist, 2) if dist else None,
-                "hours_schedule": weekday_text # List of strings ["Mon: 9am-5pm", ...]
+                "is_open_now": opening_hours.get("openNow", None),
+                "hours_schedule": opening_hours.get("weekdayDescriptions", []),
+                # Default: Not Cached
+                "ai_safety_score": None,
+                "ai_summary": None,
+                "relevant_count": 0,
+                "is_cached": False 
             })
 
-    # 3. Sort by Distance (if available) or Rating
-    if user_lat:
-        results.sort(key=lambda x: x["distance_miles"] or 9999)
-    else:
-        results.sort(key=lambda x: x["rating"], reverse=True)
+    # 3. BATCH LOOKUP (With 30-Day Expiry Check)
+    if place_ids:
+        try:
+            response = supabase.table("restaurants").select("*").in_("place_id", place_ids).execute()
+            cache_map = {row['place_id']: row for row in response.data}
+            # DEBUG PRINT: See what we found
+            # print(f"DEBUG: Search found {len(cache_map)} cached items in Supabase.")
 
-    return {"results": results}
+            for r in raw_results:
+                if r['place_id'] in cache_map:
+                    cached = cache_map[r['place_id']]
+                    
+                    # CHECK TIMESTAMP
+                    last_updated_str = cached.get("last_updated")
+                    is_fresh = False
+                    
+                    if last_updated_str:
+                        # Handle timezone 'Z' manually if needed, or rely on fromisoformat
+                        last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+                        if datetime.now(timezone.utc) - last_updated < timedelta(days=30):
+                            is_fresh = True
+                    
+                    # Only use data if it is fresh!
+                    if is_fresh:
+                        r["ai_safety_score"] = cached.get("ai_safety_score")
+                        r["ai_summary"] = cached.get("ai_summary")
+                        r["relevant_count"] = cached.get("relevant_count", 0)
+                        r["is_cached"] = True
+                        
+        except Exception as e:
+            print(f"Batch Cache Error: {e}")
+
+    # 4. SORTING
+    # Priority 0: High Score (>7)
+    # Priority 1: Unknown / No Score
+    # Priority 2: Low Score (<5) - "Penalty box"
+    def sort_key(x):
+        score = x["ai_safety_score"] or 0
+        dist = x["distance_miles"] or 9999
+        
+        # Priority 0: High Safety (Score 7+)
+        # Priority 1: Moderate/Low Safety (Score 0.1 - 6.9) -> "At least we know something"
+        # Priority 2: No Data (Score 0) -> "Unknown risk"
+        
+        priority = 2 # Default to bottom
+        if score >= 7: priority = 0
+        elif score > 0: priority = 1
+
+        # DEBUG: helpful to see why things moved
+        print(f"Sorting {x['name']}: Score={score}, Priority={priority}, Dist={dist}")
+            
+        return (priority, dist)
+
+    if user_lat:
+        raw_results.sort(key=sort_key)
+    else:
+        raw_results.sort(key=lambda x: x["rating"], reverse=True)
+
+    return {"results": raw_results}
 
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
