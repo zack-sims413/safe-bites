@@ -101,6 +101,28 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         print(f"Groq AI Error: {e}")
         return 0, "AI Analysis currently unavailable."
 
+def calculate_safebites_score(ai_score, rev_count, google_rating, dist_miles):
+    # Handle missing data safely
+    if not ai_score or ai_score == 0: return 0
+    if not rev_count: rev_count = 0
+    if not google_rating: google_rating = 0
+    
+    # 1. Safety (0-60 pts)
+    safety_points = ai_score * 6
+    
+    # 2. Confidence (0-20 pts)
+    confidence_points = min(rev_count, 20)
+    
+    # 3. Quality (0-10 pts)
+    quality_points = google_rating * 2
+    
+    # 4. Convenience (0-10 pts)
+    distance_points = 5 # Neutral default
+    if dist_miles is not None:
+        distance_points = max(0, 10 - dist_miles) # 1 pt penalty per mile
+        
+    total = (safety_points + confidence_points + quality_points + distance_points) / 10
+    return round(total, 1)
 
 # This logic lives outside the endpoint so we can "wrap" it in the cache
 @lru_cache(maxsize=100) # Remembers the last 100 distinct searches in memory
@@ -228,7 +250,8 @@ def search_restaurants(search: SearchRequest):
                 "ai_safety_score": None,
                 "ai_summary": None,
                 "relevant_count": 0,
-                "is_cached": False 
+                "is_cached": False,
+                "safe_bites_score": 0 
             })
 
     # 3. BATCH LOOKUP (With 30-Day Expiry Check)
@@ -253,40 +276,43 @@ def search_restaurants(search: SearchRequest):
                         if datetime.now(timezone.utc) - last_updated < timedelta(days=30):
                             is_fresh = True
                     
-                    # Only use data if it is fresh!
                     if is_fresh:
-                        r["ai_safety_score"] = cached.get("ai_safety_score")
+                        r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
                         r["ai_summary"] = cached.get("ai_summary")
-                        r["relevant_count"] = cached.get("relevant_count", 0)
+                        r["relevant_count"] = int(cached.get("relevant_count") or 0)
                         r["is_cached"] = True
                         
+                        # --- NEW: Calculate SafeBites Score in Backend ---
+                        r["safe_bites_score"] = calculate_safebites_score(
+                            r["ai_safety_score"],
+                            r["relevant_count"],
+                            r["rating"],
+                            r["distance_miles"]
+                        )
         except Exception as e:
-            print(f"Batch Cache Error: {e}")
+            print(f"Batch Error: {e}")
 
-    # 4. SORTING
-    # Priority 0: High Score (>7)
-    # Priority 1: Unknown / No Score
-    # Priority 2: Low Score (<5) - "Penalty box"
+    # 4. SORTING LOGIC (The User Request)
     def sort_key(x):
-        score = x["ai_safety_score"] or 0
+        sb_score = x["safe_bites_score"]
         dist = x["distance_miles"] or 9999
         
-        # Priority 0: High Safety (Score 7+)
-        # Priority 1: Moderate/Low Safety (Score 0.1 - 6.9) -> "At least we know something"
-        # Priority 2: No Data (Score 0) -> "Unknown risk"
+        # Group 0: Has a SafeBites Score -> Sort by SCORE (Desc)
+        # Group 1: No Score -> Sort by DISTANCE (Asc)
         
-        priority = 2 # Default to bottom
-        if score >= 7: priority = 0
-        elif score > 0: priority = 1
-
-        # DEBUG: helpful to see why things moved
-        print(f"Sorting {x['name']}: Score={score}, Priority={priority}, Dist={dist}")
-            
-        return (priority, dist)
+        if sb_score > 0:
+            # We want High Score first. 
+            # Python sorts tuples element-by-element.
+            # To sort Descending, we use negative score.
+            return (0, -sb_score) 
+        else:
+            # No score? Put in group 1, sort by distance.
+            return (1, dist)
 
     if user_lat:
         raw_results.sort(key=sort_key)
     else:
+        # Fallback if no location data exists at all
         raw_results.sort(key=lambda x: x["rating"], reverse=True)
 
     return {"results": raw_results}
