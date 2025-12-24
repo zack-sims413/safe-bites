@@ -6,11 +6,18 @@ from pydantic import BaseModel
 from typing import List, Optional
 from dotenv import load_dotenv
 from functools import lru_cache
+from supabase import create_client, Client
+from datetime import datetime, timedelta, timezone
 
 # 1. Load Keys
 load_dotenv()
 GOOGLE_KEY = os.getenv("GOOGLE_API_KEY")
-SERPAPI_KEY = os.getenv("SERPAPI_KEY") # <--- NEW KEY
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Initialize Supabase
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
 
@@ -23,7 +30,9 @@ class SearchRequest(BaseModel):
     user_lon: Optional[float] = None
 
 class ReviewRequest(BaseModel):
-    place_id: str # We only need the Google Place ID now
+    place_id: str # Google Place ID
+    name: Optional[str] = "Unknown" 
+    address: Optional[str] = "Unknown"
 
 # 3. Helper Functions (Cached to save money)
 
@@ -177,8 +186,33 @@ def search_restaurants(search: SearchRequest):
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
     """
-    Fetches ONLY relevant reviews, calculates stats, and returns detailed list.
+    Check Supabase Cache -> If Stale/Missing -> Fetch SerpApi -> Save to Supabase
     """
+    
+    # 1. CHECK SUPABASE
+    try:
+        # Fetch the record for this Place ID
+        response = supabase.table("restaurants").select("*").eq("place_id", req.place_id).execute()
+        data = response.data
+        
+        # Check if we have data and if it's fresh (e.g., < 30 days old)
+        # For a POC, let's say 7 days cache
+        if data:
+            record = data[0]
+            last_updated = datetime.fromisoformat(record["last_updated"].replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) - last_updated < timedelta(days=7):
+                print("Returning Cached Data from Supabase")
+                return {
+                    "reviews": record["reviews"],
+                    "relevant_count": record["relevant_count"],
+                    "average_safety_rating": record["average_safety_rating"],
+                    "source": "Cache"
+                }
+    except Exception as e:
+        print(f"Supabase Read Error: {e}")
+
+    # 2. IF CACHE MISS: FETCH FRESH DATA
+    print("Fetching fresh data from SerpApi...")
     raw_reviews = fetch_serpapi_reviews(req.place_id)
     
     processed_reviews = []
@@ -191,12 +225,11 @@ def get_reviews(req: ReviewRequest):
         
         if not text_content: continue 
 
-        # We are confident these are relevant because of the SerpApi query
         relevant_count += 1
         total_rating_sum += rating
 
         processed_reviews.append({
-            "source": "Google",
+            "source": "Google (via SerpApi)",
             "text": text_content,
             "rating": rating,
             "author": r.get("user", {}).get("name", "Anonymous"),
@@ -204,14 +237,29 @@ def get_reviews(req: ReviewRequest):
             "relevant": True
         })
 
-    # UPDATED: Calculate Average "Safety" Rating
     avg_safety_rating = 0
     if relevant_count > 0:
         avg_safety_rating = round(total_rating_sum / relevant_count, 1)
 
+    # 3. SAVE TO SUPABASE
+    try:
+        upsert_data = {
+            "place_id": req.place_id,
+            "name": req.name,
+            "address": req.address,
+            "reviews": processed_reviews,
+            "relevant_count": relevant_count,
+            "average_safety_rating": avg_safety_rating,
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
+        supabase.table("restaurants").upsert(upsert_data).execute()
+        print("Saved new data to Supabase")
+    except Exception as e:
+        print(f"Supabase Write Error: {e}")
+
     return {
         "reviews": processed_reviews, 
-        "relevant_count": relevant_count, # NEW: Number of reviews found
-        "average_safety_rating": avg_safety_rating, # NEW: The "Gluten Score"
-        "note": "Metrics derived from filtered gluten-related reviews"
+        "relevant_count": relevant_count, 
+        "average_safety_rating": avg_safety_rating, 
+        "source": "SerpApi"
     }
