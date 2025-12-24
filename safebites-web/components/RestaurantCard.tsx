@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useInView } from "react-intersection-observer";
+import { MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info } from "lucide-react"; // Modern Icons
 
 interface Restaurant {
   place_id: string;
@@ -12,7 +13,7 @@ interface Restaurant {
   distance_miles: number | null;
   is_open_now: boolean | null;
   hours_schedule: string[];
-  // New Cache Fields
+  // Cache Fields
   ai_safety_score?: number | null;
   ai_summary?: string | null;
   relevant_count?: number;
@@ -20,175 +21,142 @@ interface Restaurant {
 }
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
-  // 1. Initialize State: Use cached data if available!
+  // State initialization
   const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
   const [relevantCount, setRelevantCount] = useState<number | null>(place.relevant_count ?? null);
   const [summary, setSummary] = useState<string | null>(place.ai_summary ?? null);
-  
-  // Only show "loading" state if we don't have the data yet
   const [loading, setLoading] = useState(!place.is_cached);
-  
-  // If it's cached, we consider it "already fetched"
   const [hasFetched, setHasFetched] = useState(place.is_cached || false);
-  
   const [safeBitesScore, setSafeBitesScore] = useState<number | null>(null);
 
   const { ref, inView } = useInView({ triggerOnce: true, threshold: 0.1 });
 
+  // Scoring Logic (Client-side mirror of backend)
   const calculateSafeBitesScore = (aiScore: number, revCount: number, googleRating: number, dist: number | null) => {
     if (revCount === 0) return null;
-
-    const safetyPoints = aiScore * 6; 
-    const confidencePoints = Math.min(revCount, 20); 
-    const qualityPoints = googleRating * 2; 
-    
+    const safetyPoints = aiScore * 6;
+    const confidencePoints = Math.min(revCount, 20);
+    const qualityPoints = googleRating * 2;
     let distancePoints = 5;
-    if (dist !== null) {
-      distancePoints = Math.max(0, 10 - dist); 
-    }
-
-    const total = (safetyPoints + confidencePoints + qualityPoints + distancePoints) / 10;
-    return parseFloat(total.toFixed(1));
+    if (dist !== null) distancePoints = Math.max(0, 10 - dist);
+    return parseFloat(((safetyPoints + confidencePoints + qualityPoints + distancePoints) / 10).toFixed(1));
   };
 
-  // 2. EFFECT: Calculate Meta Score immediately if cache exists
+  // Effects
   useEffect(() => {
     if (place.is_cached && place.ai_safety_score) {
-         const sbScore = calculateSafeBitesScore(
-            place.ai_safety_score, 
-            place.relevant_count || 0, 
-            place.rating, 
-            place.distance_miles
-          );
-          setSafeBitesScore(sbScore);
+      const sbScore = calculateSafeBitesScore(place.ai_safety_score, place.relevant_count || 0, place.rating, place.distance_miles);
+      setSafeBitesScore(sbScore);
     }
-  }, [place]); 
+  }, [place]);
 
-  // 3. EFFECT: Fetch Data if NOT cached and coming into view
   useEffect(() => {
-    // Crucial: We check !place.is_cached so we don't double-fetch
     if (inView && !hasFetched && !place.is_cached) {
       setHasFetched(true);
       setLoading(true);
-
-      const fetchSafetyScore = async () => {
-        try {
-          const res = await fetch("/api/reviews", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              place_id: place.place_id,
-              name: place.name,
-              address: place.address,
-            }),
-          });
-          
-          const data = await res.json();
-          
+      fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ place_id: place.place_id, name: place.name, address: place.address }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
           const aiScore = data.ai_safety_score || 0;
           const revCount = data.relevant_count || 0;
-
           setSafetyScore(aiScore);
           setSummary(data.ai_summary);
           setRelevantCount(revCount);
-
-          const sbScore = calculateSafeBitesScore(
-            aiScore, 
-            revCount, 
-            place.rating, 
-            place.distance_miles
-          );
-          setSafeBitesScore(sbScore);
-
-        } catch (err) {
-          console.error("Failed to load score", err);
-        } finally {
+          setSafeBitesScore(calculateSafeBitesScore(aiScore, revCount, place.rating, place.distance_miles));
           setLoading(false);
-        }
-      };
-
-      fetchSafetyScore();
+        })
+        .catch(() => setLoading(false));
     }
   }, [inView, hasFetched, place]);
 
-  // UI Helpers
+  // Modern Color Palette
   const getScoreColor = (score: number) => {
-    if (score >= 8.5) return "bg-green-100 text-green-800 border-green-200 ring-1 ring-green-400";
-    if (score >= 7.0) return "bg-green-50 text-green-700 border-green-100";
-    if (score >= 5.0) return "bg-yellow-50 text-yellow-700 border-yellow-100";
-    return "bg-red-50 text-red-700 border-red-100";
+    if (score >= 8.5) return "bg-emerald-50 text-emerald-700 border-emerald-200 ring-1 ring-emerald-100";
+    if (score >= 7.0) return "bg-blue-50 text-blue-700 border-blue-200";
+    if (score >= 5.0) return "bg-yellow-50 text-yellow-700 border-yellow-200";
+    return "bg-rose-50 text-rose-700 border-rose-200";
   };
 
   return (
-    <div ref={ref} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all relative">
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">{place.name}</h2>
-          <p className="text-gray-600 text-sm">{place.address}</p>
-          <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-600">
-            <span className="font-semibold bg-gray-100 px-2 py-0.5 rounded text-xs">
-              {place.city}
-            </span>
-            {place.distance_miles && (
-                <span className="flex items-center">📍 {place.distance_miles} mi</span>
-            )}
-            <span className="flex items-center text-yellow-600 font-medium">
-               ⭐ {place.rating} (Google)
-            </span>
+    <div ref={ref} className="group bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-xl transition-all duration-300 overflow-hidden">
+      <div className="p-6">
+        <div className="flex justify-between items-start gap-4">
+          
+          {/* LEFT: Restaurant Info */}
+          <div className="flex-1">
+            <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover:text-green-700 transition-colors">
+              {place.name}
+            </h2>
+            <p className="text-slate-500 text-sm mb-3">{place.address}</p>
+            
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+              <span className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-md text-xs font-medium">
+                <MapPin className="w-3 h-3" /> {place.city}
+              </span>
+              {place.distance_miles !== null && (
+                <span className="flex items-center gap-1 text-xs">
+                  <Clock className="w-3 h-3 text-slate-400" /> {place.distance_miles} mi
+                </span>
+              )}
+              <span className="flex items-center gap-1 text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded-md">
+                <Star className="w-3 h-3 fill-current" /> {place.rating}
+              </span>
+            </div>
           </div>
-        </div>
-        
-        <div className="text-right min-w-[80px]">
-           {loading ? (
-             <div className="animate-pulse h-10 w-16 bg-gray-100 rounded ml-auto"></div>
-           ) : safeBitesScore !== null ? (
-             <div className="flex flex-col items-end">
-               <div className="text-3xl font-black text-green-700">{safeBitesScore}</div>
-               <div className="text-[9px] uppercase font-bold text-gray-400 tracking-wider">SafeBites Score</div>
-             </div>
-           ) : (
-             <div className="flex flex-col items-end">
-                <div className="text-lg font-bold text-gray-300">--</div>
-                <div className="text-[9px] uppercase font-bold text-gray-300 tracking-wider">No Data</div>
-             </div>
-           )}
+
+          {/* RIGHT: The Score Badge */}
+          <div className="flex-shrink-0 text-right">
+            {loading ? (
+              <div className="w-16 h-12 bg-slate-100 rounded-lg animate-pulse" />
+            ) : safeBitesScore !== null ? (
+              <div className="flex flex-col items-center justify-center bg-green-50 border border-green-100 px-3 py-2 rounded-xl">
+                <span className="text-3xl font-black text-green-600 leading-none tracking-tight">{safeBitesScore}</span>
+                <span className="text-[10px] font-bold text-green-800 uppercase tracking-widest mt-1">Score</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center bg-slate-50 border border-slate-100 px-3 py-2 rounded-xl">
+                <span className="text-xl font-bold text-slate-300">--</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">No Data</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-gray-100 min-h-[60px]"> 
+      {/* BOTTOM: AI Analysis Area */}
+      <div className="bg-slate-50/50 border-t border-slate-100 p-5">
         {loading ? (
-          <div className="space-y-2">
-            <div className="h-3 bg-gray-100 rounded w-3/4 animate-pulse"></div>
-            <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse"></div>
+          <div className="space-y-2 opacity-50">
+            <div className="h-2 bg-slate-200 rounded w-1/3 animate-pulse" />
+            <div className="h-2 bg-slate-200 rounded w-2/3 animate-pulse" />
           </div>
         ) : !place.is_cached && !hasFetched ? (
-           <p className="text-sm text-gray-400 italic flex items-center gap-2">
-             <span className="w-2 h-2 rounded-full bg-gray-300"></span>
-             Scroll to analyze safety...
-           </p>
+          <p className="text-xs text-slate-400 italic flex items-center gap-2">
+            <Info className="w-3 h-3" /> Scroll to trigger AI analysis...
+          </p>
         ) : relevantCount === 0 ? (
-          <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-             <p className="text-sm text-gray-500">
-               ⚠️ <span className="font-semibold">Insufficient Data:</span> We couldn't find any reviews mentioning "gluten" or "celiac" here.
-             </p>
+          <div className="flex items-start gap-3 opacity-70">
+            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-slate-500">
+              No specific reviews found mentioning "gluten" or "celiac".
+            </p>
           </div>
         ) : safeBitesScore !== null ? (
-          <div className={`p-4 rounded-lg border ${getScoreColor(safeBitesScore)}`}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-sm flex items-center gap-2">
-                🛡️ AI Analysis
-              </span>
-              <span className="text-xs font-medium opacity-80">
-                Found {relevantCount} relevant reviews
-              </span>
+          <div className={`p-4 rounded-xl border ${getScoreColor(safeBitesScore)}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wide opacity-90">AI Safety Analysis</span>
+              <span className="text-xs ml-auto opacity-70">Based on {relevantCount} reviews</span>
             </div>
-            <p className="text-sm leading-relaxed opacity-90">
+            <p className="text-sm leading-relaxed opacity-95">
               {summary}
             </p>
           </div>
-        ) : (
-          <p className="text-sm text-gray-400">Analysis unavailable.</p>
-        )}
+        ) : null}
       </div>
     </div>
   );
