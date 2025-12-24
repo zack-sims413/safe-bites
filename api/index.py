@@ -8,6 +8,7 @@ from functools import lru_cache # Built-in tool for caching
 import math 
 from thefuzz import fuzz # <--- NEW IMPORT
 import asyncio # <--- For running things in parallel
+from urllib.parse import quote
 
 # 1. Load the secret keys
 load_dotenv()
@@ -70,7 +71,7 @@ def fetch_google_search(query: str, location: str):
         "Content-Type": "application/json",
         "X-Goog-Api-Key": GOOGLE_KEY,
         # FieldMask: Only ask for what we need to save costs
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.id,places.location"
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.id,places.location,places.shortFormattedAddress"
     }
     
     payload = {
@@ -148,14 +149,21 @@ def fetch_yelp_reviews_data(yelp_id: str):
         print("Skipping Yelp: No ID or Key")
         return {}
     
-    url = f"https://api.yelp.com/v3/businesses/{yelp_id}/reviews"
+    clean_id = quote(yelp_id.strip())
 
+    url = f"https://api.yelp.com/v3/businesses/{clean_id}/reviews"
     headers = {"Authorization": f"Bearer {YELP_KEY}"}
 
     try:
+        # Debug: Print the exact URL to ensure it looks right
+        print(f"Calling Yelp URL: {url}")
+        
         resp = requests.get(url, headers=headers)
-        # Debug print to see what Yelp says
-        print(f"Yelp Response Code: {resp.status_code}") 
+        
+        if resp.status_code != 200:
+            print(f"Yelp Failed ({resp.status_code}): {resp.text}")
+            return {}
+            
         return resp.json()
     except Exception as e:
         print(f"Yelp Review Error: {e}")
