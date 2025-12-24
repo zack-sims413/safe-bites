@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from functools import lru_cache
 from supabase import create_client, Client
 from datetime import datetime, timedelta, timezone
+from groq import Groq
+import json 
 
 # 1. Load Keys
 load_dotenv()
@@ -15,9 +17,11 @@ GOOGLE_KEY = os.getenv("GOOGLE_API_KEY")
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # Initialize Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 app = FastAPI()
 
@@ -57,6 +61,45 @@ def geocode_address(address: str):
         loc = resp["results"][0]["geometry"]["location"]
         return loc["lat"], loc["lng"]
     return None, None
+
+def analyze_reviews_with_ai(reviews: List[dict]):
+    """
+    Sends reviews to Groq (llama-3.3-70b-versatile) to generate a safety score and summary.
+    """
+    if not reviews:
+        return 0, "No reviews available to analyze."
+
+    # 1. Prepare the prompt
+    # We combine all review text into one block for the AI to read
+    reviews_text = "\n".join([f"- {r['text']}" for r in reviews[:15]]) # Limit to top 15 to save tokens
+    
+    system_prompt = (
+        "You are an expert dietician specializing in Celiac Disease and gluten safety. "
+        "Analyze the following restaurant reviews and determine if this place is safe for someone with Celiac Disease. "
+        "Focus on keywords like 'cross-contamination', 'dedicated fryer', 'separate prep area', and 'got sick'. "
+        "Return a JSON object with exactly two keys: "
+        "'score' (an integer 1-10, where 10 is perfectly safe and 1 is dangerous) and "
+        "'summary' (a concise 2-sentence explanation of the rating)."
+    )
+
+    try:
+        completion = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile", 
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Here are the reviews:\n{reviews_text}"}
+            ],
+            temperature=0, # Deterministic (we want consistent facts)
+            response_format={"type": "json_object"} # Forces valid JSON output
+        )
+        
+        # Parse the JSON response
+        result = json.loads(completion.choices[0].message.content)
+        return result.get("score", 5), result.get("summary", "Analysis failed.")
+
+    except Exception as e:
+        print(f"Groq AI Error: {e}")
+        return 0, "AI Analysis currently unavailable."
 
 
 # This logic lives outside the endpoint so we can "wrap" it in the cache
@@ -186,32 +229,29 @@ def search_restaurants(search: SearchRequest):
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
     """
-    Check Supabase Cache -> If Stale/Missing -> Fetch SerpApi -> Save to Supabase
+    Check Cache -> Fetch SerpApi -> Run AI Analysis -> Save to DB
     """
-    
     # 1. CHECK SUPABASE
     try:
-        # Fetch the record for this Place ID
         response = supabase.table("restaurants").select("*").eq("place_id", req.place_id).execute()
         data = response.data
-        
-        # Check if we have data and if it's fresh (e.g., < 30 days old)
-        # For a POC, let's say 7 days cache
         if data:
             record = data[0]
             last_updated = datetime.fromisoformat(record["last_updated"].replace('Z', '+00:00'))
-            if datetime.now(timezone.utc) - last_updated < timedelta(days=7):
-                print("Returning Cached Data from Supabase")
+            if datetime.now(timezone.utc) - last_updated < timedelta(days=30): # Updated to 30 days
+                print("Returning Cached Data")
                 return {
                     "reviews": record["reviews"],
                     "relevant_count": record["relevant_count"],
                     "average_safety_rating": record["average_safety_rating"],
+                    "ai_safety_score": record.get("ai_safety_score", 0), # NEW FIELD
+                    "ai_summary": record.get("ai_summary", "No summary available."), # NEW FIELD
                     "source": "Cache"
                 }
     except Exception as e:
         print(f"Supabase Read Error: {e}")
 
-    # 2. IF CACHE MISS: FETCH FRESH DATA
+    # 2. FETCH FRESH DATA
     print("Fetching fresh data from SerpApi...")
     raw_reviews = fetch_serpapi_reviews(req.place_id)
     
@@ -222,12 +262,9 @@ def get_reviews(req: ReviewRequest):
     for r in raw_reviews:
         text_content = r.get("snippet", "")
         rating = r.get("rating", 0)
-        
         if not text_content: continue 
-
         relevant_count += 1
         total_rating_sum += rating
-
         processed_reviews.append({
             "source": "Google (via SerpApi)",
             "text": text_content,
@@ -237,11 +274,15 @@ def get_reviews(req: ReviewRequest):
             "relevant": True
         })
 
-    avg_safety_rating = 0
+    avg_rating = 0
     if relevant_count > 0:
-        avg_safety_rating = round(total_rating_sum / relevant_count, 1)
+        avg_rating = round(total_rating_sum / relevant_count, 1)
 
-    # 3. SAVE TO SUPABASE
+    # 3. RUN AI ANALYSIS (NEW STEP)
+    print("Running AI Analysis...")
+    ai_score, ai_summary = analyze_reviews_with_ai(processed_reviews)
+
+    # 4. SAVE TO SUPABASE
     try:
         upsert_data = {
             "place_id": req.place_id,
@@ -249,7 +290,9 @@ def get_reviews(req: ReviewRequest):
             "address": req.address,
             "reviews": processed_reviews,
             "relevant_count": relevant_count,
-            "average_safety_rating": avg_safety_rating,
+            "average_safety_rating": avg_rating,
+            "ai_safety_score": ai_score, # Save AI Score
+            "ai_summary": ai_summary,    # Save AI Summary
             "last_updated": datetime.now(timezone.utc).isoformat()
         }
         supabase.table("restaurants").upsert(upsert_data).execute()
@@ -260,6 +303,8 @@ def get_reviews(req: ReviewRequest):
     return {
         "reviews": processed_reviews, 
         "relevant_count": relevant_count, 
-        "average_safety_rating": avg_safety_rating, 
-        "source": "SerpApi"
+        "average_safety_rating": avg_rating,
+        "ai_safety_score": ai_score,
+        "ai_summary": ai_summary,
+        "source": "SerpApi + Groq"
     }
