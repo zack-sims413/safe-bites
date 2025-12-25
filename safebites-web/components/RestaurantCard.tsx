@@ -4,9 +4,8 @@ import { useState, useEffect } from "react";
 import { useInView } from "react-intersection-observer";
 import { MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info, Heart, ThumbsDown, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-
-// RELATIVE IMPORT (Fixes "Cannot find module" error)
 import { createClient } from "../utils/supabase/client";
+import Link from "next/link";
 
 interface Restaurant {
   place_id: string;
@@ -209,10 +208,18 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       {/* TOP: Restaurant Info */}
       <div className="p-6">
         <div className="flex justify-between items-start gap-4">
-          <div className="flex-1 pr-20"> 
-            <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover:text-green-700 transition-colors">
+          <div className="flex-1 min-w-0">
+          {/* WRAP THE NAME IN A LINK */}
+          <Link 
+            href={`/restaurant/${place.place_id}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="group/link"
+          >
+            <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover/link:text-green-700 group-hover/link:underline transition-colors">
               {place.name}
             </h2>
+          </Link>
             <p className="text-slate-500 text-sm mb-3">{place.address}</p>
             
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
@@ -291,6 +298,15 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
             </div>
         </div>
       </div>
+      {/* Add link to restaurant page */}
+      <Link 
+        href={`/restaurant/${place.place_id}`}
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="mt-4 block w-full text-center py-2.5 rounded-xl bg-white border-2 border-slate-100 text-slate-600 hover:border-green-500 hover:text-green-700 font-bold text-sm transition-all"
+      >
+        View Full Details & Reviews
+      </Link>
     </div>
   );
 }

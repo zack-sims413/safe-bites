@@ -111,7 +111,7 @@ export default function MyCollectionsPage() {
                 }`}
             >
                 <Heart className={`w-4 h-4 ${activeTab === "favorites" ? "fill-green-600" : ""}`} />
-                My Favorites
+                My Saved Places
             </button>
             <button
                 onClick={() => setActiveTab("dislikes")}
