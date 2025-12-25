@@ -3,138 +3,159 @@
 import { useState, useEffect } from "react";
 import { createClient } from "../utils/supabase/client";
 import { Star, Check, AlertCircle, Loader2 } from "lucide-react";
-import Link from "next/link";
 
 interface ReviewFormProps {
   placeId: string;
-  onReviewSubmitted: () => void; // Callback to refresh the page/list after submit
+  onReviewSubmitted: () => void;
+  existingReview?: {
+    id: string;
+    rating: number;
+    comment: string | null;
+    has_gf_menu: boolean;
+    staff_knowledgeable: boolean;
+    did_feel_safe: boolean;
+    has_dedicated_fryer: boolean;
+  } | null;
 }
 
-export default function ReviewForm({ placeId, onReviewSubmitted }: ReviewFormProps) {
-  const [user, setUser] = useState<any>(null);
+export default function ReviewForm({ placeId, onReviewSubmitted, existingReview }: ReviewFormProps) {
+  const supabase = createClient();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Form State
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  const [hoveredStar, setHoveredStar] = useState(0);
+  const [tags, setTags] = useState({
+    has_gf_menu: false,
+    staff_knowledgeable: false,
+    did_feel_safe: false,
+    has_dedicated_fryer: false,
+  });
 
-  // The 4 WiseBites Questions
-  const [hasGfMenu, setHasGfMenu] = useState(false);
-  const [staffKnowledgeable, setStaffKnowledgeable] = useState(false);
-  const [didFeelSafe, setDidFeelSafe] = useState(false);
-  const [hasDedicatedFryer, setHasDedicatedFryer] = useState(false);
-
-  const supabase = createClient();
-
+  // --- EFFECT: Pre-fill form if editing ---
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    checkUser();
-  }, [supabase]);
+    if (existingReview) {
+      setRating(existingReview.rating);
+      setComment(existingReview.comment || "");
+      setTags({
+        has_gf_menu: existingReview.has_gf_menu,
+        staff_knowledgeable: existingReview.staff_knowledgeable,
+        did_feel_safe: existingReview.did_feel_safe,
+        has_dedicated_fryer: existingReview.has_dedicated_fryer,
+      });
+    }
+  }, [existingReview]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
     if (rating === 0) {
-      setError("Please select a star rating.");
+      setMessage({ type: 'error', text: "Please select a star rating." });
       return;
     }
 
     setLoading(true);
-    setError("");
+    setMessage(null);
 
     try {
-      const { error } = await supabase.from("user_reviews").insert({
-        user_id: user.id,
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setMessage({ type: 'error', text: "You must be logged in to leave a review." });
+        setLoading(false);
+        return;
+      }
+
+      const reviewData = {
         place_id: placeId,
+        user_id: user.id,
         rating,
         comment,
-        has_gf_menu: hasGfMenu,
-        staff_knowledgeable: staffKnowledgeable,
-        did_feel_safe: didFeelSafe,
-        has_dedicated_fryer: hasDedicatedFryer,
-      });
+        ...tags,
+      };
 
-      if (error) {
-        if (error.code === "23505") { // Unique violation code
-            setError("You have already reviewed this place.");
-        } else {
-            throw error;
-        }
+      let error;
+
+      if (existingReview) {
+        // UPDATE existing review
+        const { error: updateError } = await supabase
+          .from("user_reviews")
+          .update(reviewData)
+          .eq("id", existingReview.id);
+        error = updateError;
       } else {
-        setSuccess(true);
-        // Reset form slightly just in case
-        setComment("");
-        setRating(0);
-        onReviewSubmitted(); // Tell parent component to reload reviews
+        // INSERT new review
+        const { error: insertError } = await supabase
+          .from("user_reviews")
+          .insert(reviewData);
+        error = insertError;
       }
+
+      if (error) throw error;
+
+      setMessage({ 
+        type: 'success', 
+        text: existingReview ? "Review updated successfully!" : "Review submitted successfully!" 
+      });
+      
+      // Clear message after 2 seconds
+      setTimeout(() => {
+          setMessage(null);
+          // Only clear form if it was a NEW review
+          if (!existingReview) {
+            setRating(0);
+            setComment("");
+            setTags({
+                has_gf_menu: false,
+                staff_knowledgeable: false,
+                did_feel_safe: false,
+                has_dedicated_fryer: false,
+            });
+          }
+          onReviewSubmitted();
+      }, 2000);
+
     } catch (err) {
-      setError("Failed to submit review. Please try again.");
-      console.error(err);
+      console.error("Error submitting review:", err);
+      setMessage({ type: 'error', text: "Failed to submit review. Please try again." });
     } finally {
       setLoading(false);
     }
   };
 
-  if (success) {
-    return (
-      <div className="p-6 bg-green-50 border border-green-200 rounded-xl text-center">
-        <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-          <Check className="w-6 h-6 text-green-600" />
-        </div>
-        <h3 className="text-lg font-bold text-green-800">Review Submitted!</h3>
-        <p className="text-green-700">Thank you for helping the community eat safer.</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="p-8 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center">
-        <p className="text-slate-500 mb-4">Join the community to share your experience.</p>
-        <Link href="/login" className="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition-colors">
-          Sign In to Review
-        </Link>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-      <h3 className="text-lg font-bold text-slate-900 mb-4">Write a Review</h3>
-      
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2">
-          <AlertCircle className="w-4 h-4" />
-          {error}
+    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+      <h3 className="text-lg font-bold text-slate-900 mb-1">
+        {existingReview ? "Edit Your Review" : "Leave a Review"}
+      </h3>
+      <p className="text-slate-500 text-sm mb-6">
+        {existingReview ? "Update your experience for others." : "Share your experience with the community."}
+      </p>
+
+      {message && (
+        <div className={`p-3 mb-4 rounded-lg text-sm flex items-center gap-2 ${
+          message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+        }`}>
+          {message.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          {message.text}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        
-        {/* Star Rating */}
+        {/* Rating Stars */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">Overall Rating</label>
-          <div className="flex gap-1">
+          <label className="block text-sm font-medium text-slate-700 mb-2">Rating</label>
+          <div className="flex gap-2">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
                 type="button"
-                className="focus:outline-none transition-transform active:scale-90"
-                onMouseEnter={() => setHoveredStar(star)}
-                onMouseLeave={() => setHoveredStar(0)}
                 onClick={() => setRating(star)}
+                className="focus:outline-none transition-transform hover:scale-110"
               >
                 <Star
                   className={`w-8 h-8 ${
-                    star <= (hoveredStar || rating)
-                      ? "fill-amber-400 text-amber-400"
-                      : "text-slate-200"
+                    star <= rating ? "fill-amber-400 text-amber-400" : "text-slate-200"
                   }`}
                 />
               </button>
@@ -142,58 +163,76 @@ export default function ReviewForm({ placeId, onReviewSubmitted }: ReviewFormPro
           </div>
         </div>
 
-        {/* The 4 WiseBites Questions */}
-        <div className="grid sm:grid-cols-2 gap-4">
-            <Toggle label="Dedicated GF Menu?" checked={hasGfMenu} onChange={setHasGfMenu} />
-            <Toggle label="Staff asked about allergies?" checked={staffKnowledgeable} onChange={setStaffKnowledgeable} />
-            <Toggle label="Did you feel safe?" checked={didFeelSafe} onChange={setDidFeelSafe} />
-            <Toggle label="Dedicated fryer/space?" checked={hasDedicatedFryer} onChange={setHasDedicatedFryer} />
+        {/* Tags */}
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-slate-700">Safety Checks</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TagCheckbox 
+              label="Gluten-Free Menu Available" 
+              checked={tags.has_gf_menu} 
+              onChange={(c) => setTags(p => ({ ...p, has_gf_menu: c }))} 
+            />
+            <TagCheckbox 
+              label="Staff Knowledgeable" 
+              checked={tags.staff_knowledgeable} 
+              onChange={(c) => setTags(p => ({ ...p, staff_knowledgeable: c }))} 
+            />
+            <TagCheckbox 
+              label="Dedicated Fryer/Area" 
+              checked={tags.has_dedicated_fryer} 
+              onChange={(c) => setTags(p => ({ ...p, has_dedicated_fryer: c }))} 
+            />
+            <TagCheckbox 
+              label="I Felt Safe Eating Here" 
+              checked={tags.did_feel_safe} 
+              onChange={(c) => setTags(p => ({ ...p, did_feel_safe: c }))} 
+            />
+          </div>
         </div>
 
         {/* Comment */}
         <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Detailed Feedback</label>
-            <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Tell us about your experience..."
-                // ADDED 'text-slate-900' explicitly here:
-                className="w-full p-3 text-slate-900 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none min-h-[100px]"
-            />
+          <label className="block text-sm font-medium text-slate-700 mb-2">Comment (Optional)</label>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            // UPDATED: Added text-slate-900 for dark text color
+            className="w-full px-4 py-3 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all resize-none h-32 text-sm"
+            placeholder="What did you order? How was the service?"
+          />
         </div>
 
+        {/* Submit Button */}
         <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          type="submit"
+          disabled={loading}
+          className="w-full bg-slate-900 text-white font-medium py-3 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
         >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Review"}
+          {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+          {existingReview ? "Update Review" : "Submit Review"}
         </button>
-
       </form>
     </div>
   );
 }
 
-// Helper Component for the Yes/No Toggles
-function Toggle({ label, checked, onChange }: { label: string, checked: boolean, onChange: (v: boolean) => void }) {
-    return (
-        <div 
-            onClick={() => onChange(!checked)}
-            className={`cursor-pointer p-3 rounded-lg border flex items-center justify-between transition-all ${
-                checked 
-                ? "bg-green-50 border-green-200" 
-                : "bg-white border-slate-200 hover:border-slate-300"
-            }`}
-        >
-            <span className={`text-sm font-medium ${checked ? "text-green-800" : "text-slate-600"}`}>
-                {label}
-            </span>
-            <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${
-                checked ? "bg-green-500 border-green-500" : "border-slate-300"
-            }`}>
-                {checked && <Check className="w-3 h-3 text-white" />}
-            </div>
-        </div>
-    )
+function TagCheckbox({ label, checked, onChange }: { label: string, checked: boolean, onChange: (c: boolean) => void }) {
+  return (
+    <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+      checked ? "border-green-200 bg-green-50 text-green-800" : "border-slate-200 hover:border-slate-300 text-slate-600"
+    }`}>
+      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+        checked ? "bg-green-500 border-green-500" : "bg-white border-slate-300"
+      }`}>
+        {checked && <Check className="w-3.5 h-3.5 text-white" />}
+      </div>
+      <input 
+        type="checkbox" 
+        className="hidden" 
+        checked={checked} 
+        onChange={(e) => onChange(e.target.checked)} 
+      />
+      <span className="text-sm font-medium select-none">{label}</span>
+    </label>
+  );
 }

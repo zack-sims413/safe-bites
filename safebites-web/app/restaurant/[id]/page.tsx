@@ -6,7 +6,7 @@ import { createClient } from "../../../utils/supabase/client";
 import Navbar from "../../../components/Navbar";
 import ReviewForm from "../../../components/ReviewForm";
 import { 
-  Loader2, MapPin, Star, ShieldCheck, ArrowLeft, ExternalLink, Quote, 
+  Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
   Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
   Heart, X
 } from "lucide-react";
@@ -28,6 +28,7 @@ interface Restaurant {
 
 interface CommunityReview {
   id: string;
+  user_id: string; // Added user_id to interface to track ownership
   rating: number;
   comment: string | null;
   created_at: string;
@@ -45,6 +46,7 @@ export default function RestaurantDetailsPage() {
   const [place, setPlace] = useState<Restaurant | null>(null);
   const [sortedGoogleReviews, setSortedGoogleReviews] = useState<any[]>([]);
   const [communityReviews, setCommunityReviews] = useState<CommunityReview[]>([]);
+  const [currentUserReview, setCurrentUserReview] = useState<CommunityReview | null>(null); // NEW: Track user's review
   const [loading, setLoading] = useState(true);
   const [calculatedScore, setCalculatedScore] = useState<number | null>(null);
   
@@ -99,29 +101,23 @@ export default function RestaurantDetailsPage() {
     try {
         if (action === 'save') {
             if (userAction === 'saved') {
-                // Remove from favorites
                 await supabase.from('favorites').delete().eq('place_id', id).eq('user_id', user.id);
                 setUserAction('none');
             } else {
-                // Remove from dislikes if it exists there
                 if (userAction === 'avoided') {
                     await supabase.from('dislikes').delete().eq('place_id', id).eq('user_id', user.id);
                 }
-                // Add to favorites
                 await supabase.from('favorites').insert({ place_id: id, user_id: user.id });
                 setUserAction('saved');
             }
         } else if (action === 'avoid') {
             if (userAction === 'avoided') {
-                // Remove from dislikes
                 await supabase.from('dislikes').delete().eq('place_id', id).eq('user_id', user.id);
                 setUserAction('none');
             } else {
-                // Remove from favorites if it exists there
                 if (userAction === 'saved') {
                     await supabase.from('favorites').delete().eq('place_id', id).eq('user_id', user.id);
                 }
-                // Add to dislikes
                 await supabase.from('dislikes').insert({ place_id: id, user_id: user.id });
                 setUserAction('avoided');
             }
@@ -152,6 +148,9 @@ export default function RestaurantDetailsPage() {
 
   const fetchData = useCallback(async () => {
     if (!id) return;
+    
+    // Get current user for review matching
+    const { data: { user } } = await supabase.auth.getUser();
 
     // 1. Fetch Restaurant
     const { data: restaurantData } = await supabase
@@ -185,6 +184,12 @@ export default function RestaurantDetailsPage() {
     
     if (userReviews) {
       setCommunityReviews(userReviews);
+      
+      // Check if current user has reviewed
+      if (user) {
+        const myReview = userReviews.find((r: CommunityReview) => r.user_id === user.id);
+        setCurrentUserReview(myReview || null);
+      }
     }
 
     setLoading(false);
@@ -241,9 +246,7 @@ export default function RestaurantDetailsPage() {
 
       <main className="max-w-4xl mx-auto px-4 py-8">
         
-        <button onClick={() => router.back()} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 mb-6 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Back to Search
-        </button>
+        {/* REMOVED: Back to Search Button */}
 
         {/* HEADER */}
         <div className="border-b border-slate-100 pb-8 mb-8">
@@ -297,7 +300,6 @@ export default function RestaurantDetailsPage() {
 
         {/* SCORES GRID */}
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-            {/* ... (Existing Score UI remains exactly the same) ... */}
             <div className={`p-6 rounded-2xl border flex flex-col justify-between ${calculatedScore ? getScoreColor(calculatedScore) : "border-slate-100 bg-slate-50"}`}>
                 <div>
                     <div className="flex items-center gap-2 mb-2 opacity-80">
@@ -349,12 +351,21 @@ export default function RestaurantDetailsPage() {
             </div>
         </div>
 
-        {/* ... Rest of Page (Reviews, etc) ... */}
+        {/* REVIEWS SECTION */}
         <div className="space-y-12">
             <section className="grid lg:grid-cols-12 gap-8">
                 <div className="lg:col-span-5">
                    <div className="sticky top-24">
-                      <ReviewForm placeId={place.place_id} onReviewSubmitted={() => fetchData()} />
+                      {/* PASSING EXISTING REVIEW:
+                         If you want to enable editing, update your ReviewForm component
+                         to accept 'existingReview' as a prop and use it to pre-fill the form.
+                      */}
+                      {/* @ts-ignore - Assuming you will update ReviewForm next */}
+                      <ReviewForm 
+                        placeId={place.place_id} 
+                        onReviewSubmitted={() => fetchData()} 
+                        existingReview={currentUserReview} 
+                      />
                    </div>
                 </div>
                 <div className="lg:col-span-7 space-y-6">
@@ -371,7 +382,10 @@ export default function RestaurantDetailsPage() {
                                     <div className="flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"><User className="w-4 h-4 text-slate-400" /></div>
                                         <div>
-                                            <div className="text-sm font-bold text-slate-900">WiseBites Member</div>
+                                            <div className="text-sm font-bold text-slate-900">
+                                                {/* Show 'You' if it's the current user */}
+                                                {currentUserReview?.id === review.id ? "You" : "WiseBites Member"}
+                                            </div>
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 <div className="flex text-amber-400">
                                                     {[...Array(review.rating)].map((_, i) => (<Star key={i} className="w-3 h-3 fill-current" />))}
