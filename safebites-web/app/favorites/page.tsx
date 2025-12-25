@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Heart, ThumbsDown } from "lucide-react";
+import { Loader2, Heart, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 // RELATIVE IMPORTS
@@ -121,7 +121,7 @@ export default function MyCollectionsPage() {
                     : "border-transparent text-slate-500 hover:text-slate-700"
                 }`}
             >
-                <ThumbsDown className="w-4 h-4" />
+                <X className="w-4 h-4" />
                 Avoid List
             </button>
         </div>

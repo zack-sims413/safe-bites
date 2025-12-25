@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "../../../utils/supabase/client";
 import Navbar from "../../../components/Navbar";
+import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ArrowLeft, ExternalLink, Quote, 
-  Calendar, MessageSquare 
+  Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
+  Heart, X
 } from "lucide-react";
 
+// ... (Interfaces remain the same) ...
 interface Restaurant {
   place_id: string;
   name: string;
@@ -23,67 +26,189 @@ interface Restaurant {
   reviews?: any[]; 
 }
 
+interface CommunityReview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  has_gf_menu: boolean;
+  staff_knowledgeable: boolean;
+  did_feel_safe: boolean;
+  has_dedicated_fryer: boolean;
+}
+
 export default function RestaurantDetailsPage() {
   const { id } = useParams();
-  const [place, setPlace] = useState<Restaurant | null>(null);
-  const [sortedReviews, setSortedReviews] = useState<any[]>([]); // New State for Sorted Data
-  const [loading, setLoading] = useState(true);
-  const [calculatedScore, setCalculatedScore] = useState<number | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
-  // --- HELPER: Parse "A month ago" into Integer Days ---
+  const [place, setPlace] = useState<Restaurant | null>(null);
+  const [sortedGoogleReviews, setSortedGoogleReviews] = useState<any[]>([]);
+  const [communityReviews, setCommunityReviews] = useState<CommunityReview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [calculatedScore, setCalculatedScore] = useState<number | null>(null);
+  
+  // Feedback State
+  const [feedbackStatus, setFeedbackStatus] = useState<"none" | "helpful" | "unhelpful">("none");
+
+  // User Action State (Save/Avoid)
+  const [userAction, setUserAction] = useState<"none" | "saved" | "avoided">("none");
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // --- LOGIC: Check User Status ---
+  const checkUserStatus = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !id) return;
+
+    // Check Favorites
+    const { data: fav } = await supabase
+        .from('favorites')
+        .select('id')
+        .eq('place_id', id)
+        .eq('user_id', user.id)
+        .single();
+    
+    if (fav) {
+        setUserAction('saved');
+        return;
+    }
+
+    // Check Dislikes
+    const { data: dis } = await supabase
+        .from('dislikes')
+        .select('id')
+        .eq('place_id', id)
+        .eq('user_id', user.id)
+        .single();
+
+    if (dis) {
+        setUserAction('avoided');
+    }
+  }, [id, supabase]);
+
+  // --- LOGIC: Handle Save/Avoid Toggle ---
+  const handleToggleAction = async (action: 'save' | 'avoid') => {
+    setActionLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        router.push('/login'); // Redirect if not logged in
+        return;
+    }
+
+    try {
+        if (action === 'save') {
+            if (userAction === 'saved') {
+                // Remove from favorites
+                await supabase.from('favorites').delete().eq('place_id', id).eq('user_id', user.id);
+                setUserAction('none');
+            } else {
+                // Remove from dislikes if it exists there
+                if (userAction === 'avoided') {
+                    await supabase.from('dislikes').delete().eq('place_id', id).eq('user_id', user.id);
+                }
+                // Add to favorites
+                await supabase.from('favorites').insert({ place_id: id, user_id: user.id });
+                setUserAction('saved');
+            }
+        } else if (action === 'avoid') {
+            if (userAction === 'avoided') {
+                // Remove from dislikes
+                await supabase.from('dislikes').delete().eq('place_id', id).eq('user_id', user.id);
+                setUserAction('none');
+            } else {
+                // Remove from favorites if it exists there
+                if (userAction === 'saved') {
+                    await supabase.from('favorites').delete().eq('place_id', id).eq('user_id', user.id);
+                }
+                // Add to dislikes
+                await supabase.from('dislikes').insert({ place_id: id, user_id: user.id });
+                setUserAction('avoided');
+            }
+        }
+    } catch (error) {
+        console.error("Error toggling status:", error);
+    } finally {
+        setActionLoading(false);
+    }
+  };
+
+  const handleAiFeedback = async (isHelpful: boolean) => {
+    if (feedbackStatus !== "none" || !place) return; 
+
+    setFeedbackStatus(isHelpful ? "helpful" : "unhelpful");
+
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from("ai_feedback").insert({
+            place_id: place.place_id,
+            user_id: user?.id || null, 
+            is_helpful: isHelpful
+        });
+    } catch (err) {
+        console.error("Feedback error:", err);
+    }
+  };
+
+  const fetchData = useCallback(async () => {
+    if (!id) return;
+
+    // 1. Fetch Restaurant
+    const { data: restaurantData } = await supabase
+      .from("restaurants")
+      .select("*")
+      .eq("place_id", id)
+      .single();
+
+    if (restaurantData) {
+      setPlace(restaurantData);
+      
+      const score = restaurantData.wise_bites_score || calculateWiseBitesScore(
+        restaurantData.ai_safety_score, 
+        restaurantData.relevant_count, 
+        restaurantData.rating
+      );
+      setCalculatedScore(score);
+
+      if (restaurantData.reviews && Array.isArray(restaurantData.reviews)) {
+        const sorted = [...restaurantData.reviews].sort((a, b) => getDaysAgo(a.date) - getDaysAgo(b.date));
+        setSortedGoogleReviews(sorted);
+      }
+    }
+
+    // 2. Fetch Community Reviews
+    const { data: userReviews } = await supabase
+      .from("user_reviews")
+      .select("*")
+      .eq("place_id", id)
+      .order("created_at", { ascending: false });
+    
+    if (userReviews) {
+      setCommunityReviews(userReviews);
+    }
+
+    setLoading(false);
+  }, [id, supabase]);
+
+  useEffect(() => {
+    fetchData();
+    checkUserStatus();
+  }, [fetchData, checkUserStatus]);
+
+  // --- HELPERS ---
   const getDaysAgo = (dateStr: string) => {
-    if (!dateStr) return 99999; // Handle missing dates
-    
-    // Normalize string: "A month" -> "1 month"
+    if (!dateStr) return 99999;
     const cleanStr = dateStr.toLowerCase().replace("a ", "1 ").replace("an ", "1 ");
-    
     const parts = cleanStr.split(" ");
     const val = parseInt(parts[0]);
-    
     if (isNaN(val)) return 99999;
-
     let multiplier = 1;
-    // Logic: Convert everything to approximate "Days"
-    if (cleanStr.includes("second") || cleanStr.includes("minute") || cleanStr.includes("hour")) multiplier = 0; // Very fresh (0 days)
-    else if (cleanStr.includes("day")) multiplier = 1;
+    if (cleanStr.includes("day")) multiplier = 1;
     else if (cleanStr.includes("week")) multiplier = 7;
     else if (cleanStr.includes("month")) multiplier = 30;
     else if (cleanStr.includes("year")) multiplier = 365;
-
     return val * multiplier;
   };
-
-  useEffect(() => {
-    const fetchRestaurant = async () => {
-      if (!id) return;
-      
-      const { data } = await supabase
-        .from("restaurants")
-        .select("*")
-        .eq("place_id", id)
-        .single();
-
-      if (data) {
-        setPlace(data);
-        const score = data.wise_bites_score || calculateWiseBitesScore(data.ai_safety_score, data.relevant_count, data.rating);
-        setCalculatedScore(score);
-
-        // SORT REVIEWS: Newest (lowest days ago) -> Oldest
-        if (data.reviews && Array.isArray(data.reviews)) {
-          const sorted = [...data.reviews].sort((a, b) => getDaysAgo(a.date) - getDaysAgo(b.date));
-          setSortedReviews(sorted);
-        }
-        
-        setLoading(false);
-      } else {
-        setLoading(false);
-      }
-    };
-
-    fetchRestaurant();
-  }, [id]);
 
   const calculateWiseBitesScore = (aiScore: any, revCount: any, googleRating: any) => {
     if (!aiScore) return null;
@@ -102,25 +227,13 @@ export default function RestaurantDetailsPage() {
     return "text-rose-600 bg-rose-50 border-rose-200";
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-300" />
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-slate-300" /></div>;
+  if (!place) return null;
 
-  if (!place) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-        <h2 className="text-xl font-bold text-slate-900">Restaurant not found</h2>
-        <button onClick={() => router.back()} className="mt-4 text-green-600 hover:underline">Go Back</button>
-      </div>
-    );
-  }
-
-  // Get Latest Date from the SORTED array
-  const latestReviewDate = sortedReviews.length > 0 ? sortedReviews[0].date : "N/A";
+  const totalReviews = (place.relevant_count || 0) + communityReviews.length;
+  const latestDate = communityReviews.length > 0 
+    ? new Date(communityReviews[0].created_at).toLocaleDateString() 
+    : (sortedGoogleReviews.length > 0 ? sortedGoogleReviews[0].date : "N/A");
 
   return (
     <div className="min-h-screen bg-white">
@@ -128,10 +241,7 @@ export default function RestaurantDetailsPage() {
 
       <main className="max-w-4xl mx-auto px-4 py-8">
         
-        <button 
-          onClick={() => router.back()} 
-          className="flex items-center gap-2 text-slate-500 hover:text-slate-800 mb-6 transition-colors"
-        >
+        <button onClick={() => router.back()} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 mb-6 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Search
         </button>
 
@@ -139,27 +249,55 @@ export default function RestaurantDetailsPage() {
         <div className="border-b border-slate-100 pb-8 mb-8">
             <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">{place.name}</h1>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-slate-600">
-                <span className="flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4 text-slate-400" /> {place.address}
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <Star className="w-4 h-4 text-amber-500 fill-amber-500" /> {place.rating} Stars on Google
-                </span>
+                <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-400" /> {place.address}</span>
+                <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-500 fill-amber-500" /> {place.rating} Stars on Google</span>
             </div>
-            <a 
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}&query_place_id=${place.place_id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-green-600 hover:text-green-700 hover:underline"
-            >
-                View on Google Maps <ExternalLink className="w-3 h-3" />
-            </a>
+            
+            <div className="flex flex-col sm:flex-row gap-4 mt-6">
+                {/* SAVE / AVOID BUTTONS */}
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => handleToggleAction('save')}
+                        disabled={actionLoading}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${
+                            userAction === 'saved'
+                            ? "bg-green-100 text-green-700 border border-green-200"
+                            : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"
+                        }`}
+                    >
+                        <Heart className={`w-4 h-4 ${userAction === 'saved' ? "fill-current" : ""}`} />
+                        {userAction === 'saved' ? "Saved to Profile" : "Save to Profile"}
+                    </button>
+
+                    <button
+                        onClick={() => handleToggleAction('avoid')}
+                        disabled={actionLoading}
+                        className={`p-2 rounded-full border transition-all ${
+                            userAction === 'avoided'
+                            ? "bg-red-50 text-red-600 border-red-200"
+                            : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200"
+                        }`}
+                        title="Add to avoid list"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="hidden sm:block w-px h-8 bg-slate-200 self-center mx-2" />
+
+                <a 
+                    href={`http://googleusercontent.com/maps.google.com/?q=${encodeURIComponent(place.name + " " + place.address)}&query_place_id=${place.place_id}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                >
+                    View on Google Maps <ExternalLink className="w-3 h-3" />
+                </a>
+            </div>
         </div>
 
         {/* SCORES GRID */}
         <div className="grid md:grid-cols-3 gap-6 mb-12">
-            
-            {/* 1. WiseScore Card */}
+            {/* ... (Existing Score UI remains exactly the same) ... */}
             <div className={`p-6 rounded-2xl border flex flex-col justify-between ${calculatedScore ? getScoreColor(calculatedScore) : "border-slate-100 bg-slate-50"}`}>
                 <div>
                     <div className="flex items-center gap-2 mb-2 opacity-80">
@@ -169,23 +307,12 @@ export default function RestaurantDetailsPage() {
                     <div className="text-4xl font-black">{calculatedScore || "--"}</div>
                     <p className="text-xs mt-2 opacity-75">Out of 10.0 based on safety analysis</p>
                 </div>
-
                 <div className="mt-6 pt-4 border-t border-black/10 flex flex-col gap-1.5 text-sm opacity-80">
-                    <div className="flex items-center gap-2">
-                        <MessageSquare className="w-4 h-4" />
-                        <span className="font-medium">{place.relevant_count || 0} Relevant Reviews</span>
-                    </div>
-                    {/* Shows the NEWEST date based on our sorting */}
-                    {sortedReviews.length > 0 && (
-                        <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            <span className="font-medium">Latest: {latestReviewDate}</span>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4" /><span className="font-medium">{totalReviews} Relevant Reviews</span></div>
+                    <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span className="font-medium">Latest: {latestDate}</span></div>
                 </div>
             </div>
 
-            {/* 2. AI Analysis Card */}
             <div className="md:col-span-2 p-6 rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col">
                 <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -194,63 +321,99 @@ export default function RestaurantDetailsPage() {
                 <p className="text-slate-600 leading-relaxed flex-grow">
                     {place.ai_summary || "No detailed analysis available yet."}
                 </p>
+
+                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                    <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Was this summary helpful?</p>
+                    
+                    {feedbackStatus === "none" ? (
+                        <div className="flex items-center gap-2">
+                            <button 
+                                onClick={() => handleAiFeedback(true)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-all"
+                            >
+                                <ThumbsUp className="w-4 h-4" /> Yes
+                            </button>
+                            <button 
+                                onClick={() => handleAiFeedback(false)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-all"
+                            >
+                                <ThumbsDown className="w-4 h-4" /> No
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="text-sm font-medium text-slate-500 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                           {feedbackStatus === "helpful" ? "Thanks for your feedback! 👍" : "Thanks! We'll improve this. 🔧"}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
 
+        {/* ... Rest of Page (Reviews, etc) ... */}
         <div className="space-y-12">
-            
-            {/* Community Reviews Placeholder */}
-            <section>
-                <h2 className="text-2xl font-bold text-slate-900 mb-4">Community Reviews</h2>
-                <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500">
-                    <p>User reviews coming soon...</p>
+            <section className="grid lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-5">
+                   <div className="sticky top-24">
+                      <ReviewForm placeId={place.place_id} onReviewSubmitted={() => fetchData()} />
+                   </div>
+                </div>
+                <div className="lg:col-span-7 space-y-6">
+                    <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                        Community Reviews
+                        <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{communityReviews.length}</span>
+                    </h2>
+                    {communityReviews.length === 0 ? (
+                        <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500"><p>Be the first to review this spot!</p></div>
+                    ) : (
+                        communityReviews.map((review) => (
+                            <div key={review.id} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"><User className="w-4 h-4 text-slate-400" /></div>
+                                        <div>
+                                            <div className="text-sm font-bold text-slate-900">WiseBites Member</div>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <div className="flex text-amber-400">
+                                                    {[...Array(review.rating)].map((_, i) => (<Star key={i} className="w-3 h-3 fill-current" />))}
+                                                </div>
+                                                <span className="text-xs text-slate-400 font-medium">• {new Date(review.created_at).toLocaleDateString()}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                    <Badge label="GF Menu" active={review.has_gf_menu} />
+                                    <Badge label="Staff Knowledge" active={review.staff_knowledgeable} />
+                                    <Badge label="Dedicated Fryer" active={review.has_dedicated_fryer} />
+                                    <Badge label="Felt Safe" active={review.did_feel_safe} />
+                                </div>
+                                {review.comment && (<p className="text-slate-700 text-sm leading-relaxed bg-slate-50 p-3 rounded-lg">"{review.comment}"</p>)}
+                            </div>
+                        ))
+                    )}
                 </div>
             </section>
 
-             {/* Gluten-Free Menu Placeholder */}
              <section>
                 <h2 className="text-2xl font-bold text-slate-900 mb-4">Gluten-Free Menu</h2>
-                <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500">
-                    <p>No menus uploaded yet.</p>
-                </div>
+                <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500"><p>No menus uploaded yet.</p></div>
             </section>
 
-            {/* GOOGLE REVIEWS SECTION (Sorted) */}
-            {sortedReviews.length > 0 && (
+            {sortedGoogleReviews.length > 0 && (
                 <section>
-                    <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                        Mentioned Reviews
-                        <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
-                            From Google
-                        </span>
-                    </h2>
+                    <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">Mentioned Reviews <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">From Google</span></h2>
                     <div className="grid gap-4 md:grid-cols-2">
-                        {sortedReviews.map((review: any, i: number) => (
+                        {sortedGoogleReviews.map((review: any, i: number) => (
                             <div key={i} className="p-5 rounded-xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-shadow">
                                 <div className="flex items-start gap-3">
                                     <Quote className="w-8 h-8 text-green-100 shrink-0" />
                                     <div className="w-full">
-                                        <p className="text-slate-700 text-sm leading-relaxed mb-3">
-                                            "{review.text || review.snippet}"
-                                        </p>
+                                        <p className="text-slate-700 text-sm leading-relaxed mb-3">"{review.text || review.snippet}"</p>
                                         <div className="flex items-center justify-between border-t border-slate-50 pt-3 mt-2">
-                                            <span className="text-xs font-bold text-slate-900">
-                                                {review.author || "Google User"}
-                                            </span>
-                                            
+                                            <span className="text-xs font-bold text-slate-900">{review.author || "Google User"}</span>
                                             <div className="flex items-center gap-3">
-                                                {review.date && (
-                                                    <span className="text-[10px] uppercase font-bold text-slate-400">
-                                                        {review.date}
-                                                    </span>
-                                                )}
-                                                {review.rating && (
-                                                    <div className="flex text-amber-400">
-                                                        {[...Array(Math.round(review.rating))].map((_, i) => (
-                                                            <Star key={i} className="w-3 h-3 fill-current" />
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                {review.date && (<span className="text-[10px] uppercase font-bold text-slate-400">{review.date}</span>)}
+                                                {review.rating && (<div className="flex text-amber-400">{[...Array(Math.round(review.rating))].map((_, i) => (<Star key={i} className="w-3 h-3 fill-current" />))}</div>)}
                                             </div>
                                         </div>
                                     </div>
@@ -260,10 +423,13 @@ export default function RestaurantDetailsPage() {
                     </div>
                 </section>
             )}
-
         </div>
-
       </main>
     </div>
   );
+}
+
+function Badge({ label, active }: { label: string, active: boolean }) {
+    if (!active) return null;
+    return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-bold border border-green-100"><CheckCircle2 className="w-3 h-3" /> {label}</span>;
 }
