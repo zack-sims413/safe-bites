@@ -37,7 +37,13 @@ export async function updateSession(request: NextRequest) {
 
   // PROTECTED ROUTES LOGIC
   // If no user, and they are NOT on the login page, kick them out.
-  if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
+  // Also allow for people to get to signup and auth pages
+  if (
+    !user && 
+    !request.nextUrl.pathname.startsWith('/login') && 
+    !request.nextUrl.pathname.startsWith('/auth') &&
+    !request.nextUrl.pathname.startsWith('/signup') // <--- ADD THIS LINE
+  ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)

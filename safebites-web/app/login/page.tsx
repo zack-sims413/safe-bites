@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "../../utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -108,13 +109,12 @@ export default function LoginPage() {
 
         <div className="mt-6 text-center text-sm text-slate-500">
           Don't have an account?{" "}
-          <button 
-            onClick={handleSignUp}
-            disabled={loading}
-            className="text-green-600 font-bold hover:underline disabled:opacity-50"
+          <Link 
+            href="/signup"
+            className="text-green-600 font-bold hover:underline"
           >
-            Sign Up
-          </button>
+            Sign up
+          </Link>
         </div>
         
         <div className="mt-4 text-center">
