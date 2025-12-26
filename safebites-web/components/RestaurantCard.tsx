@@ -189,36 +189,49 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
   return (
     <div ref={ref} className="group bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-xl transition-all duration-300 overflow-hidden relative flex flex-col h-full">
       
-      {/* INTERACTION BUTTONS (Top Right) */}
-      <div className="shrink-0 absolute top-4 right-4 z-10 flex items-center gap-2">
-        
-        {/* Helper Label - ALWAYS VISIBLE */}
-        <span className="text-[10px] font-bold text-slate-500 bg-white/90 backdrop-blur px-2 py-1.5 rounded-lg shadow-sm">
-            Save to Profile
-        </span>
-
-        <button onClick={toggleFavorite} disabled={actionLoading} className="p-2 rounded-full bg-white/80 backdrop-blur-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition-all" title="Save to Favorites">
-            {actionLoading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : <Heart className={`w-5 h-5 transition-colors ${isFavorite ? "fill-red-500 text-red-500" : "text-slate-400 hover:text-red-400"}`} />}
-        </button>
-        <button onClick={toggleDislike} disabled={actionLoading} className={`p-2 rounded-full shadow-sm border transition-all ${isDisliked ? "bg-slate-800 text-white border-slate-800" : "bg-white/80 border-slate-100 text-slate-400 hover:bg-slate-100 hover:text-slate-600"}`} title="Add to Avoid List">
-            <X className="w-5 h-5" />
-        </button>
-      </div>
-
       {/* TOP: Restaurant Info */}
-      <div className="p-6">
-        <div className="flex justify-between items-start gap-3">
+      <div className="p-5 pb-0 relative"> {/* Added relative for the buttons anchor */}
+        <div className="flex justify-between items-start gap-4">
           <div className="flex-1 min-w-0">
-          <Link href={`/restaurant/${place.place_id}`} target="_blank" rel="noopener noreferrer" className="group/link">
-            <h2 className="text-xl font-bold text-slate-900 truncate pr-2 leading-tight mb-1 group-hover/link:text-green-700 group-hover/link:underline transition-colors">{place.name}</h2>
-          </Link>
-            <p className="text-slate-500 text-sm mb-3">{place.address}</p>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-              <span className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-md text-xs font-medium"><MapPin className="w-3 h-3" /> {place.city}</span>
-              {place.distance_miles !== null && (<span className="flex items-center gap-1 text-xs"><Clock className="w-3 h-3 text-slate-400" /> {place.distance_miles} mi</span>)}
-              <span className="flex items-center gap-1 text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded-md"><Star className="w-3 h-3 fill-current" /> {place.rating}</span>
+            <Link href={`/restaurant/${place.place_id}`} target="_blank" rel="noopener noreferrer" className="group/link block">
+              <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover/link:text-green-700 group-hover/link:underline transition-colors break-words">
+                {place.name}
+              </h2>
+            </Link>
+            <p className="text-slate-500 text-sm mb-3 truncate">{place.address}</p>
+            
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 mb-4">
+              <span className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-md text-xs font-medium shrink-0">
+                <MapPin className="w-3 h-3" /> {place.city}
+              </span>
+              {place.distance_miles !== null && (
+                <span className="flex items-center gap-1 text-xs shrink-0">
+                  <Clock className="w-3 h-3 text-slate-400" /> {place.distance_miles} mi
+                </span>
+              )}
+              <span className="flex items-center gap-1 text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded-md shrink-0">
+                <Star className="w-3 h-3 fill-current" /> {place.rating}
+              </span>
             </div>
           </div>
+        </div>
+
+        {/* --- RESPONSIVE BUTTONS SECTION --- */}
+        {/* MOBILE: Flows naturally below text (mt-2) */}
+        {/* DESKTOP (sm+): Jumps to absolute top right */}
+        <div className="flex items-center justify-end gap-2 mb-4 sm:mb-0 sm:absolute sm:top-4 sm:right-4 sm:z-10">
+            
+            {/* Label: Hidden on mobile to save space, visible on desktop */}
+            <span className="hidden sm:block text-[10px] font-bold text-slate-500 bg-white/90 backdrop-blur px-2 py-1.5 rounded-lg shadow-sm">
+                Save to Profile
+            </span>
+
+            <button onClick={toggleFavorite} disabled={actionLoading} className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm" title="Save to Favorites">
+                {actionLoading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : <Heart className={`w-5 h-5 transition-colors ${isFavorite ? "fill-red-500 text-red-500" : "text-slate-400 hover:text-red-400"}`} />}
+            </button>
+            <button onClick={toggleDislike} disabled={actionLoading} className={`p-2 rounded-full border shadow-sm transition-all ${isDisliked ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-600"}`} title="Add to Avoid List">
+                <X className="w-5 h-5" />
+            </button>
         </div>
       </div>
 
@@ -266,7 +279,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
                     
                     <p className="text-sm leading-relaxed opacity-95">{summary}</p>
 
-                    {/* FEEDBACK BUTTONS INSIDE THE BOX */}
                     <div className="mt-3 pt-2 border-t border-black/5 flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase opacity-60">Helpful?</span>
                         {feedbackStatus === "none" ? (
@@ -284,7 +296,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
                             </span>
                         )}
                     </div>
-
                 </div>
                 ) : null}
             </div>
