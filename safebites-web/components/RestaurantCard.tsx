@@ -221,8 +221,8 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
         {/* DESKTOP (sm+): Jumps to absolute top right */}
         <div className="flex items-center justify-end gap-2 mb-4 sm:mb-0 sm:absolute sm:top-4 sm:right-4 sm:z-10">
             
-            {/* Label: Hidden on mobile to save space, visible on desktop */}
-            <span className="hidden sm:block text-[10px] font-bold text-slate-500 bg-white/90 backdrop-blur px-2 py-1.5 rounded-lg shadow-sm">
+            {/* Label: visible on mobile and visible on desktop */}
+            <span className="text-[10px] font-bold text-slate-500 bg-white/90 backdrop-blur px-2 py-1.5 rounded-lg shadow-sm border border-slate-100/50">
                 Save to Profile
             </span>
 
