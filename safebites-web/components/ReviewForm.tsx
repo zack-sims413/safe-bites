@@ -115,8 +115,11 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
           onReviewSubmitted();
       }, 2000);
 
-    } catch (err) {
-      console.error("Error submitting review:", err);
+    } catch (err: any) { // Add ': any' to access properties
+      console.error("FULL ERROR DETAILS:", err);
+      console.error("Error Message:", err.message);
+      console.error("Supabase Details:", err.details);
+      console.error("Supabase Hint:", err.hint);
       setMessage({ type: 'error', text: "Failed to submit review. Please try again." });
     } finally {
       setLoading(false);

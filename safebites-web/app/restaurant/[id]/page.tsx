@@ -8,7 +8,7 @@ import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
   Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
-  Heart, X
+  Heart, X, Clock, ChevronDown
 } from "lucide-react";
 
 // ... (Interfaces remain the same) ...
@@ -56,6 +56,8 @@ export default function RestaurantDetailsPage() {
   // User Action State (Save/Avoid)
   const [userAction, setUserAction] = useState<"none" | "saved" | "avoided">("none");
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [showHours, setShowHours] = useState(false);
 
   // --- LOGIC: Check User Status ---
   const checkUserStatus = useCallback(async () => {
@@ -152,7 +154,23 @@ export default function RestaurantDetailsPage() {
     // Get current user for review matching
     const { data: { user } } = await supabase.auth.getUser();
 
-    // 1. Fetch Restaurant
+    // A. Fetch Community Reviews FIRST (so we can use them in scoring)
+    const { data: userReviews } = await supabase
+      .from("user_reviews")
+      .select("*")
+      .eq("place_id", id)
+      .order("created_at", { ascending: false });
+    
+    const safeUserReviews = userReviews || [];
+    setCommunityReviews(safeUserReviews);
+
+    // Identify if current user has reviewed
+    if (user && safeUserReviews.length > 0) {
+        const myReview = safeUserReviews.find((r: CommunityReview) => r.user_id === user.id);
+        setCurrentUserReview(myReview || null);
+    }
+
+    // B. Fetch Restaurant Data
     const { data: restaurantData } = await supabase
       .from("restaurants")
       .select("*")
@@ -162,42 +180,30 @@ export default function RestaurantDetailsPage() {
     if (restaurantData) {
       setPlace(restaurantData);
       
+      // C. Calculate Score using BOTH data sources
+      // Check if a manual override score exists in DB, otherwise calculate it dynamically
       const score = restaurantData.wise_bites_score || calculateWiseBitesScore(
         restaurantData.ai_safety_score, 
         restaurantData.relevant_count, 
-        restaurantData.rating
+        restaurantData.rating,
+        safeUserReviews // <--- Passing the reviews we just fetched
       );
       setCalculatedScore(score);
 
+      // Sort Google Reviews if they exist
       if (restaurantData.reviews && Array.isArray(restaurantData.reviews)) {
         const sorted = [...restaurantData.reviews].sort((a, b) => getDaysAgo(a.date) - getDaysAgo(b.date));
         setSortedGoogleReviews(sorted);
       }
     }
 
-    // 2. Fetch Community Reviews
-    const { data: userReviews } = await supabase
-      .from("user_reviews")
-      .select("*")
-      .eq("place_id", id)
-      .order("created_at", { ascending: false });
-    
-    if (userReviews) {
-      setCommunityReviews(userReviews);
-      
-      // Check if current user has reviewed
-      if (user) {
-        const myReview = userReviews.find((r: CommunityReview) => r.user_id === user.id);
-        setCurrentUserReview(myReview || null);
-      }
-    }
-
     setLoading(false);
   }, [id, supabase]);
 
+  // TRIGGER: This runs once when the page loads (or when ID changes)
   useEffect(() => {
     fetchData();
-    checkUserStatus();
+    checkUserStatus(); // Don't forget this if you're using the favorites/save logic
   }, [fetchData, checkUserStatus]);
 
   // --- HELPERS ---
@@ -215,14 +221,70 @@ export default function RestaurantDetailsPage() {
     return val * multiplier;
   };
 
-  const calculateWiseBitesScore = (aiScore: any, revCount: any, googleRating: any) => {
+  const calculateWiseBitesScore = (
+    aiScore: number | null | undefined, 
+    revCount: number | null | undefined, 
+    googleRating: number | null | undefined,
+    communityReviews: CommunityReview[]
+  ) => {
+    // 1. Defaut/Fallback
     if (!aiScore) return null;
-    const rating = googleRating || 0; 
-    const count = revCount || 0;
-    const safetyPoints = aiScore * 7;
-    const confidencePoints = Math.min(count, 20);
-    const qualityPoints = rating * 2;
-    return parseFloat(((safetyPoints + confidencePoints + qualityPoints) / 10).toFixed(1));
+    
+    // 2. Constants for weighting
+    let finalScore = aiScore * 7; // Base AI Score (scale 0-70 initially)
+    let maxPoints = 70; // We will divide by this denominator at the end
+
+    // 3. Community Impact (The "Real Human" Factor)
+    if (communityReviews.length > 0) {
+        // Calculate average community rating (1-5 stars)
+        const totalStars = communityReviews.reduce((acc, r) => acc + r.rating, 0);
+        const avgCommunityRating = totalStars / communityReviews.length;
+        
+        // Count safety flags
+        const unsafeReports = communityReviews.filter(r => !r.did_feel_safe).length;
+        const safeReports = communityReviews.filter(r => r.did_feel_safe).length;
+
+        // WEIGHTING LOGIC:
+        // Community Rating is worth up to 30 points (3 points per star * 2)
+        // This effectively replaces the generic Google "Quality Points"
+        const communityPoints = (avgCommunityRating * 2) * 3; 
+        
+        finalScore += communityPoints;
+        maxPoints += 30;
+
+        // SAFETY VETO (The "Penalty" Logic)
+        // If someone felt unsafe, we punish the score heavily (-1.5 points off the final 10.0 scale per incident)
+        if (unsafeReports > 0) {
+            // We subtract from the raw total before division
+            // 1.5 points on a 10.0 scale = 15 points on our 100 scale
+            finalScore -= (unsafeReports * 15);
+        }
+
+        // SAFETY BONUS
+        // If they felt safe, we give a tiny nudge boost
+        if (safeReports > 0) {
+            finalScore += (safeReports * 2); 
+        }
+
+    } else {
+        // Fallback to Google Data if no community reviews exist (Your old logic)
+        const rating = googleRating || 0; 
+        const count = revCount || 0;
+        
+        const confidencePoints = Math.min(count, 20); // Max 20 points for volume
+        const qualityPoints = rating * 2; // Max 10 points for Google stars
+        
+        finalScore += confidencePoints + qualityPoints;
+        maxPoints += 30; // Denominator matches to keep scale roughly 0-10
+    }
+
+    // 4. Normalize to 0.0 - 10.0
+    let normalized = finalScore / (maxPoints / 10);
+    
+    // Cap strictly between 1.0 and 10.0
+    normalized = Math.max(1.0, Math.min(10.0, normalized));
+
+    return parseFloat(normalized.toFixed(1));
   };
 
   const getScoreColor = (score: number) => {
@@ -251,9 +313,38 @@ export default function RestaurantDetailsPage() {
         {/* HEADER */}
         <div className="border-b border-slate-100 pb-8 mb-8">
             <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">{place.name}</h1>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-slate-600">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-slate-600 mb-6">
                 <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-400" /> {place.address}</span>
                 <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-500 fill-amber-500" /> {place.rating} Stars on Google</span>
+            </div>
+
+            {/* Collapsible Hours Section */}
+            <div className="flex items-start gap-3 text-slate-600 mb-6">
+              <Clock className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="flex flex-col">
+                 <button 
+                    onClick={() => setShowHours(!showHours)}
+                    className="flex items-center gap-2 font-medium text-slate-900 hover:text-green-600 transition-colors"
+                 >
+                    Opening Hours
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showHours ? "rotate-180" : ""}`} />
+                 </button>
+                 
+                 {/* The Dropdown Content */}
+                 {showHours && (
+                     <div className="mt-2 pl-2 border-l-2 border-slate-100 animate-in slide-in-from-top-2 fade-in duration-200">
+                        {place.hours_schedule && place.hours_schedule.length > 0 ? (
+                            <ul className="text-sm space-y-1.5 text-slate-500">
+                                {place.hours_schedule.map((day, i) => (
+                                    <li key={i}>{day}</li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <span className="text-sm text-slate-400">Hours not available</span>
+                        )}
+                     </div>
+                 )}
+              </div>
             </div>
             
             <div className="flex flex-col sm:flex-row gap-4 mt-6">

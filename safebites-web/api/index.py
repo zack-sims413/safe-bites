@@ -40,6 +40,8 @@ class ReviewRequest(BaseModel):
     # NEW FIELDS (Required for Favorites Fix)
     city: Optional[str] = None
     rating: Optional[float] = 0.0
+    # NEW FIELD
+    hours_schedule: Optional[List[str]] = None
 
 # 3. Helper Functions
 
@@ -155,7 +157,7 @@ def fetch_google_search(query: str, location: str, lat: float = None, lng: float
     payload = {
         "textQuery": text_query, 
         "minRating": 3.5, 
-        "maxResultCount": 10
+        "maxResultCount": 15
     }
 
     if lat and lng:
@@ -242,6 +244,12 @@ def search_restaurants(search: SearchRequest):
 
             opening_hours = place.get("regularOpeningHours", {})
 
+            raw_hours = place.get("regularOpeningHours", {}).get("weekdayDescriptions", [])
+            cleaned_hours = [
+                h.replace('\u2009', ' ').replace('\u202f', ' ').strip() 
+                for h in raw_hours
+            ]
+
             raw_results.append({
                 "name": place.get("displayName", {}).get("text", "Unknown"),
                 "address": address_str,
@@ -250,8 +258,7 @@ def search_restaurants(search: SearchRequest):
                 "place_id": pid,
                 "location": {"lat": lat, "lng": lng},
                 "distance_miles": round(dist, 2) if dist else None,
-                "is_open_now": opening_hours.get("openNow", None),
-                "hours_schedule": opening_hours.get("weekdayDescriptions", []),
+                "hours_schedule": cleaned_hours,
                 "ai_safety_score": None,
                 "ai_summary": None,
                 "relevant_count": 0,
@@ -275,17 +282,28 @@ def search_restaurants(search: SearchRequest):
                         if datetime.now(timezone.utc) - last_updated < timedelta(days=30):
                             is_fresh = True
                     
+                    # 1. ALWAYS grab the DB Score if it exists (Source of Truth)
+                    db_score = cached.get("wise_bites_score")
+                    if db_score and float(db_score) > 0:
+                        r["wise_bites_score"] = float(db_score)
+                    
+                    # 2. Populate AI data only if fresh
                     if is_fresh:
                         r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
                         r["ai_summary"] = cached.get("ai_summary")
-                        r["relevant_count"] = int(cached.get("relevant_count") or 0)
+                        google_count = int(cached.get("relevant_count") or 0)
+                        wb_count = int(cached.get("community_review_count") or 0)
+                        r["relevant_count"] = google_count + wb_count
                         r["is_cached"] = True
-                        r["wise_bites_score"] = calculate_wisebites_score(
-                            r["ai_safety_score"],
-                            r["relevant_count"],
-                            r["rating"],
-                            r["distance_miles"]
-                        )
+                        
+                        # Only calculate manually if DB score was missing
+                        if r["wise_bites_score"] == 0:
+                             r["wise_bites_score"] = calculate_wisebites_score(
+                                r["ai_safety_score"],
+                                r["relevant_count"],
+                                r["rating"],
+                                r["distance_miles"]
+                            )
         except Exception as e:
             print(f"Batch Error: {e}")
 
@@ -307,15 +325,16 @@ def search_restaurants(search: SearchRequest):
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
     """
-    Check Cache -> Fetch SerpApi -> Run AI Analysis -> Save to DB
+    Check Cache -> Fetch SerpApi -> Fetch Community Reviews -> Run AI -> Save
     """
-    # 1. CHECK SUPABASE
+    # 1. CHECK SUPABASE CACHE
     try:
         response = supabase.table("restaurants").select("*").eq("place_id", req.place_id).execute()
         data = response.data
         if data:
             record = data[0]
             last_updated = datetime.fromisoformat(record["last_updated"].replace('Z', '+00:00'))
+            # Cache is valid for 30 days
             if datetime.now(timezone.utc) - last_updated < timedelta(days=30): 
                 print("Returning Cached Data")
                 return {
@@ -329,7 +348,7 @@ def get_reviews(req: ReviewRequest):
     except Exception as e:
         print(f"Supabase Read Error: {e}")
 
-    # 2. FETCH FRESH DATA
+    # 2. FETCH GOOGLE DATA (SerpApi)
     print("Fetching fresh data from SerpApi...")
     raw_reviews = fetch_serpapi_reviews(req.place_id)
     
@@ -352,25 +371,57 @@ def get_reviews(req: ReviewRequest):
             "relevant": True
         })
 
+    # --- NEW SECTION: FETCH WISEBITES COMMUNITY REVIEWS ---
+    try:
+        # Fetch reviews from your own database
+        wb_reviews_response = supabase.table("user_reviews").select("*").eq("place_id", req.place_id).execute()
+        wb_reviews = wb_reviews_response.data or []
+        
+        if wb_reviews:
+            print(f"Found {len(wb_reviews)} WiseBites reviews. Adding to AI context...")
+            for wb_r in wb_reviews:
+                # Format safety status clearly for the AI
+                safety_tag = "SAFE" if wb_r.get('did_feel_safe') else "UNSAFE"
+                comment_text = wb_r.get('comment') or "No specific comment."
+                
+                # Add to the list being sent to AI
+                processed_reviews.append({
+                    "source": "WiseBites Community",
+                    "text": f"[{safety_tag} REPORT] {comment_text}",
+                    "rating": wb_r.get('rating', 0),
+                    "author": "WiseBites Member",
+                    "date": wb_r.get('created_at', "")[:10], 
+                    "relevant": True
+                })
+                # Note: We don't increment relevant_count here to keep that metric focused on 'external' validation volume,
+                # but you could if you wanted.
+    except Exception as e:
+        print(f"Error fetching community reviews: {e}")
+    # -------------------------------------------------------
+
     avg_rating = 0
     if relevant_count > 0:
         avg_rating = round(total_rating_sum / relevant_count, 1)
 
-    # 3. RUN AI ANALYSIS
+    # 3. RUN AI ANALYSIS (Now includes both Google + WiseBites reviews)
     print("Running AI Analysis...")
     ai_score, ai_summary = analyze_reviews_with_ai(processed_reviews)
 
-    # 4. SAVE TO SUPABASE (UPDATED LOGIC)
+    # 4. SAVE TO SUPABASE
     try:
         upsert_data = {
             "place_id": req.place_id,
-            # NEW: Backup Alias
             "google_place_id": req.place_id, 
             "name": req.name,
             "address": req.address,
-            # NEW: Save City & Rating so Favorites page works
             "city": req.city or extract_city(req.address),
             "rating": req.rating,
+            
+            # --- NEW: SAVE HOURS SCHEDULE ---
+            # This works because we updated ReviewRequest to accept it
+            "hours_schedule": req.hours_schedule,
+            # --------------------------------
+
             "reviews": processed_reviews,
             "relevant_count": relevant_count,
             "average_safety_rating": avg_rating,

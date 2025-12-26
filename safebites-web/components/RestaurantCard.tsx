@@ -19,18 +19,50 @@ interface Restaurant {
   ai_safety_score?: number | null;
   ai_summary?: string | null;
   relevant_count?: number;
+  // NEW: Accept the DB score
+  wise_bites_score?: number | null; 
   is_cached?: boolean;
   favorite_id?: string;
 }
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
+  // --- SCORE CALCULATION HELPER (Fallback Logic) ---
+  // Defined early so we can use it in state initialization
+  const calculateWiseBitesScore = (aiScore: number, revCount: number, googleRating: number, dist: number | null) => {
+    if (revCount === 0 || aiScore === null || aiScore === undefined) return null;
+    const rating = googleRating || 0; 
+    const safetyPoints = aiScore * 7;
+    const confidencePoints = Math.min(revCount, 20);
+    const qualityPoints = rating * 2;
+    
+    let total = (safetyPoints + confidencePoints + qualityPoints) / 10;
+    // Cap strictly between 1.0 and 10.0
+    total = Math.max(1.0, Math.min(10.0, total));
+    
+    return parseFloat(total.toFixed(1));
+  };
+
   // --- STATE: Data ---
   const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
   const [relevantCount, setRelevantCount] = useState<number | null>(place.relevant_count ?? null);
   const [summary, setSummary] = useState<string | null>(place.ai_summary ?? null);
   const [loading, setLoading] = useState(!place.is_cached);
   const [hasFetched, setHasFetched] = useState(place.is_cached || false);
-  const [wiseBitesScore, setWiseBitesScore] = useState<number | null>(null);
+
+  // --- SCORE INITIALIZATION: Database > Local Calc ---
+  const [wiseBitesScore, setWiseBitesScore] = useState<number | null>(() => {
+    // 1. If DB score exists (and is valid), use it immediately.
+    if (place.wise_bites_score && place.wise_bites_score > 0) {
+        return place.wise_bites_score;
+    }
+    // 2. Fallback: Calculate locally
+    return calculateWiseBitesScore(
+        place.ai_safety_score || 0, 
+        place.relevant_count || 0, 
+        place.rating, 
+        place.distance_miles
+    );
+  });
 
   // --- STATE: User Interaction ---
   const [isFavorite, setIsFavorite] = useState(false);
@@ -114,23 +146,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
     }
   };
 
-  // --- SCORE CALCULATION LOGIC ---
-  const calculateWiseBitesScore = (aiScore: number, revCount: number, googleRating: number, dist: number | null) => {
-    if (revCount === 0 || aiScore === null || aiScore === undefined) return null;
-    const rating = googleRating || 0; 
-    const safetyPoints = aiScore * 7;
-    const confidencePoints = Math.min(revCount, 20);
-    const qualityPoints = rating * 2;
-    return parseFloat(((safetyPoints + confidencePoints + qualityPoints) / 10).toFixed(1));
-  };
-
-  useEffect(() => {
-    if (place.is_cached && place.ai_safety_score) {
-      const wbScore = calculateWiseBitesScore(place.ai_safety_score, place.relevant_count || 0, place.rating, place.distance_miles);
-      setWiseBitesScore(wbScore);
-    }
-  }, [place]);
-
+  // --- 5. FETCH DATA (Lazy Load) ---
   useEffect(() => {
     if (inView && !hasFetched && !place.is_cached) {
       setHasFetched(true);
@@ -138,7 +154,14 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ place_id: place.place_id, name: place.name, address: place.address, city: place.city, rating: place.rating }),
+        body: JSON.stringify({ 
+            place_id: place.place_id, 
+            name: place.name, 
+            address: place.address, 
+            city: place.city, 
+            rating: place.rating, 
+            hours_schedule: place.hours_schedule 
+        }),
       })
         .then((res) => res.json())
         .then((data) => {
@@ -147,6 +170,8 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
           setSafetyScore(aiScore);
           setSummary(data.ai_summary);
           setRelevantCount(revCount);
+          // If we fetched fresh data, we calculate score locally 
+          // because the DB trigger happens asynchronously on the server
           setWiseBitesScore(calculateWiseBitesScore(aiScore, revCount, place.rating, place.distance_miles));
           setLoading(false);
         })
@@ -165,9 +190,9 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
     <div ref={ref} className="group bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-xl transition-all duration-300 overflow-hidden relative flex flex-col h-full">
       
       {/* INTERACTION BUTTONS (Top Right) */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+      <div className="shrink-0 absolute top-4 right-4 z-10 flex items-center gap-2">
         
-        {/* Helper Label - NOW ALWAYS VISIBLE */}
+        {/* Helper Label - ALWAYS VISIBLE */}
         <span className="text-[10px] font-bold text-slate-500 bg-white/90 backdrop-blur px-2 py-1.5 rounded-lg shadow-sm">
             Save to Profile
         </span>
@@ -182,10 +207,10 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
 
       {/* TOP: Restaurant Info */}
       <div className="p-6">
-        <div className="flex justify-between items-start gap-4">
+        <div className="flex justify-between items-start gap-3">
           <div className="flex-1 min-w-0">
           <Link href={`/restaurant/${place.place_id}`} target="_blank" rel="noopener noreferrer" className="group/link">
-            <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover/link:text-green-700 group-hover/link:underline transition-colors">{place.name}</h2>
+            <h2 className="text-xl font-bold text-slate-900 truncate pr-2 leading-tight mb-1 group-hover/link:text-green-700 group-hover/link:underline transition-colors">{place.name}</h2>
           </Link>
             <p className="text-slate-500 text-sm mb-3">{place.address}</p>
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">

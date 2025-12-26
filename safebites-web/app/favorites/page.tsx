@@ -51,7 +51,9 @@ export default function MyCollectionsPage() {
             ai_safety_score,
             ai_summary,
             relevant_count,
-            hours_schedule
+            hours_schedule,
+            wise_bites_score,
+            community_review_count
           )
         `)
         .eq("user_id", user.id);
@@ -71,22 +73,27 @@ export default function MyCollectionsPage() {
   const getRestaurantData = (item: SavedPlace) => {
     // Supabase sometimes returns the joined relation as an array or object
     const r = Array.isArray(item.restaurants) ? item.restaurants[0] : item.restaurants;
+    const googleCount = r.relevant_count || 0;
+    const wiseBitesCount = r.community_review_count || 0;
+    const totalReviews = googleCount + wiseBitesCount;
     
     if (!r) return null;
 
-    // MAPPING LOGIC: Matches your DDL exactly
+    // MAPPING LOGIC
     return {
         place_id: r.place_id || item.place_id, 
         name: r.name || "Unknown Restaurant",
         address: r.address || "",
-        city: r.city || "", // Needs the SQL update to work!
-        rating: r.rating || 0, // Needs the SQL update to work!
-        distance_miles: null, // We don't store distance in DB (it changes relative to user)
-        is_open_now: null, // We don't store realtime open status
+        city: r.city || "", 
+        rating: r.rating || 0, 
+        distance_miles: null, 
+        is_open_now: null, 
         hours_schedule: r.hours_schedule || [],
-        ai_safety_score: r.ai_safety_score, // Matches DDL
-        ai_summary: r.ai_summary, // Matches DDL
-        relevant_count: r.relevant_count || 0, // Matches DDL
+        ai_safety_score: r.ai_safety_score, 
+        ai_summary: r.ai_summary, 
+        relevant_count: totalReviews || 0,
+        // ADDED MAPPING HERE:
+        wise_bites_score: r.wise_bites_score, 
         is_cached: true 
     };
   };
