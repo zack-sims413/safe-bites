@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "../utils/supabase/client";
 import { useRouter, usePathname } from "next/navigation"; // Added usePathname
-import { LogOut, Heart, Search, User, Settings, ChevronDown } from "lucide-react";
+import { LogOut, Heart, Search, User, Settings, ChevronDown, BookOpen, HelpCircle, Star } from "lucide-react";
 
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
@@ -109,6 +109,34 @@ export default function Navbar() {
                       >
                         <Settings className="w-4 h-4" />
                         Profile Settings
+                      </Link>
+
+                      {/* NEW: About & FAQ Links */}
+                      <Link 
+                        href="/about" 
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors"
+                      >
+                        <BookOpen className="w-4 h-4" /> 
+                        About WiseBites
+                      </Link>
+
+                      <Link 
+                        href="/faq" 
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors"
+                      >
+                        <HelpCircle className="w-4 h-4" /> 
+                        FAQ & Privacy
+                      </Link>
+
+                      <Link 
+                        href="/my-reviews" 
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors"
+                      >
+                        <Star className="w-4 h-4" /> 
+                        My Reviews
                       </Link>
                       
                       <button
