@@ -129,36 +129,41 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         print(f"Groq AI Error: {e}")
         return 0, "AI Analysis currently unavailable."
 
-def calculate_wisebites_score(ai_score, community_avg_rating, safe_count, unsafe_count):
+def calculate_wisebites_score(ai_score, google_rating, google_rev_count, wb_avg_rating, wb_safe_count, wb_unsafe_count):
     """
-    Matches Supabase Trigger Logic Exactly:
-    1. Base AI Score: (AI * 7) -> Max 70 points
-    2. Community Bonus: ((Rating * 2) * 3) -> Max 30 points
-    3. Penalties/Bonuses: -15 for unsafe, +2 for safe
-    4. Normalize: Divide by 10
+    Hybrid Scoring Logic (Mirrors SQL):
+    - IF WiseBites reviews exist: 70% AI + 30% Community + Bonuses
+    - ELSE: 80% AI + 20% Google Rating
     """
     if ai_score is None: ai_score = 0
-    if community_avg_rating is None: community_avg_rating = 0
+    if google_rating is None: google_rating = 0
+    if google_rev_count is None: google_rev_count = 0
     
-    # 1. Base AI Score (Weight: 70%)
-    total_score = float(ai_score) * 7
+    wb_review_count = wb_safe_count + wb_unsafe_count
     
-    # 2. Community Rating Bonus (Weight: 30%)
-    # Logic: Rating (0-5) * 2 = 0-10. Multiplied by 3 = 0-30 points.
-    total_score += (float(community_avg_rating) * 2) * 3
-    
-    # 3. Apply Penalties & Bonuses
-    total_score -= (unsafe_count * 15) # Harsh penalty for unsafe reports
-    total_score += (safe_count * 2)    # Small bonus for safe confirmations
-    
-    # 4. Normalize to 1-10 scale
+    total_score = 0.0
+
+    if wb_review_count > 0:
+        # MODE A: VERIFIED (Community Data)
+        total_score = float(ai_score) * 7
+        total_score += (float(wb_avg_rating) * 2) * 3
+        # Penalties/Bonuses
+        total_score -= (wb_unsafe_count * 15)
+        total_score += (wb_safe_count * 2)
+    else:
+        # MODE B: COLD START (Google Data)
+        total_score = float(ai_score) * 8
+        
+        # Only use Google Rating if there is some volume (>3 reviews)
+        if google_rev_count > 3:
+            # Google Rating (0-5) * 4 = Max 20 points
+            total_score += (float(google_rating) * 4)
+
+    # Normalize
     final_score = total_score / 10.0
     
-    # 5. Clamp values
-    if final_score > 10.0: final_score = 10.0
-    if final_score < 1.0: final_score = 1.0
-    
-    return round(final_score, 1)
+    # Clamp
+    return max(1.0, min(round(final_score, 1), 10.0))
 
 @lru_cache(maxsize=100) 
 def fetch_google_search(query: str, location: str, lat: float = None, lng: float = None):
@@ -309,17 +314,19 @@ def search_restaurants(search: SearchRequest):
                         r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
                         r["ai_summary"] = cached.get("ai_summary")
                         google_count = int(cached.get("relevant_count") or 0)
-                        wb_count = int(cached.get("community_review_count") or 0)
-                        r["relevant_count"] = google_count + wb_count
+                        # wb_count = int(cached.get("community_review_count") or 0)
+                        r["relevant_count"] = google_count
                         r["is_cached"] = True
                         
                         # Only calculate manually if DB score was missing
                         if r["wise_bites_score"] == 0:
-                             r["wise_bites_score"] = calculate_wisebites_score(
+                            # We pass 0 for all community stats to trigger "Cold Start" mode
+                            # We pass the Google Rating & Count to get the boost
+                            r["wise_bites_score"] = calculate_wisebites_score(
                                 r["ai_safety_score"],
-                                0, # No community rating known here
-                                0, # No safe count known
-                                0 # No unsafe count known
+                                r["rating"],           # Google Rating
+                                r["relevant_count"],   # Google Count
+                                0, 0, 0                # No Community Data known in search list
                             )
         except Exception as e:
             print(f"Batch Error: {e}")
@@ -437,6 +444,8 @@ def get_reviews(req: ReviewRequest):
     # --- CALCULATE FINAL COMPOSITE SCORE ---
     final_wb_score = calculate_wisebites_score(
         ai_score, 
+        req.rating,      # Google Rating from request
+        relevant_count,  # Google Count from SerpApi
         wb_community_avg, 
         wb_safe_count, 
         wb_unsafe_count

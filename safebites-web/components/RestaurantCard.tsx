@@ -19,28 +19,31 @@ interface Restaurant {
   ai_safety_score?: number | null;
   ai_summary?: string | null;
   relevant_count?: number;
-  // NEW: Accept the DB score
   wise_bites_score?: number | null; 
   is_cached?: boolean;
   favorite_id?: string;
 }
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
-  // --- SCORE CALCULATION HELPER (Fallback Logic) ---
-  // Defined early so we can use it in state initialization
-  const calculateWiseBitesScore = (aiScore: number, revCount: number, googleRating: number, dist: number | null) => {
-    if (revCount === 0 || aiScore === null || aiScore === undefined) return null;
-    const rating = googleRating || 0; 
-    const safetyPoints = aiScore * 7;
-    const confidencePoints = Math.min(revCount, 20);
-    const qualityPoints = rating * 2;
+  
+  // --- UPDATED SCORE CALCULATION HELPER ---
+  // Matches the new Python/SQL Logic: (AI * 7) + Community Bonuses
+  // Since we don't have community stats here, we default them to 0.
+  const calculateWiseBitesScore = (aiScore: number, googleRating: number, googleCount: number) => {
+    if (aiScore === null || aiScore === undefined || aiScore === 0) return null;
     
-    let total = (safetyPoints + confidencePoints + qualityPoints) / 10;
-    // Cap strictly between 1.0 and 10.0
-    total = Math.max(1.0, Math.min(10.0, total));
+    // We assume 0 WiseBites reviews here (Cold Start Mode)
+    // Formula: (AI * 8) + (GoogleRating * 4)
     
-    return parseFloat(total.toFixed(1));
-  };
+    let total = aiScore * 8.0;
+    
+    if (googleCount > 3) {
+        total += (googleRating * 4.0);
+    }
+    
+    const final = total / 10.0;
+    return Math.max(1.0, Math.min(10.0, parseFloat(final.toFixed(1))));
+};
 
   // --- STATE: Data ---
   const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
@@ -49,18 +52,18 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
   const [loading, setLoading] = useState(!place.is_cached);
   const [hasFetched, setHasFetched] = useState(place.is_cached || false);
 
-  // --- SCORE INITIALIZATION: Database > Local Calc ---
+  // --- SCORE INITIALIZATION ---
   const [wiseBitesScore, setWiseBitesScore] = useState<number | null>(() => {
-    // 1. If DB score exists (and is valid), use it immediately.
+    // 1. Priority: DB Score
     if (place.wise_bites_score && place.wise_bites_score > 0) {
         return place.wise_bites_score;
     }
-    // 2. Fallback: Calculate locally
+    // 2. Fallback: Local Calc (New Logic)
+    // UPDATE: Must pass all 3 arguments now!
     return calculateWiseBitesScore(
-        place.ai_safety_score || 0, 
-        place.relevant_count || 0, 
-        place.rating, 
-        place.distance_miles
+        place.ai_safety_score || 0,
+        place.rating || 0,         // Pass Google Rating
+        place.relevant_count || 0  // Pass Google Count
     );
   });
 
@@ -167,12 +170,22 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
         .then((data) => {
           const aiScore = data.ai_safety_score || 0;
           const revCount = data.relevant_count || 0;
+          
           setSafetyScore(aiScore);
           setSummary(data.ai_summary);
           setRelevantCount(revCount);
-          // If we fetched fresh data, we calculate score locally 
-          // because the DB trigger happens asynchronously on the server
-          setWiseBitesScore(calculateWiseBitesScore(aiScore, revCount, place.rating, place.distance_miles));
+          
+          // Use the score returned by the API if available, otherwise calculate locally
+          if (data.wise_bites_score && data.wise_bites_score > 0) {
+            setWiseBitesScore(data.wise_bites_score);
+          } else {
+            setWiseBitesScore(calculateWiseBitesScore(
+                aiScore, 
+                place.rating || 0,        // Pass Google Rating
+                place.relevant_count || 0 // Pass Google Count
+            ));
+          }
+          
           setLoading(false);
         })
         .catch(() => setLoading(false));
@@ -190,7 +203,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
     <div ref={ref} className="group bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-xl transition-all duration-300 overflow-hidden relative flex flex-col h-full">
       
       {/* TOP: Restaurant Info */}
-      <div className="p-5 pb-0 relative"> {/* Added relative for the buttons anchor */}
+      <div className="p-5 pb-0 relative"> 
         <div className="flex justify-between items-start gap-4">
           <div className="flex-1 min-w-0">
             <Link href={`/restaurant/${place.place_id}`} target="_blank" rel="noopener noreferrer" className="group/link block">
@@ -216,12 +229,8 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
           </div>
         </div>
 
-        {/* --- RESPONSIVE BUTTONS SECTION --- */}
-        {/* MOBILE: Flows naturally below text (mt-2) */}
-        {/* DESKTOP (sm+): Jumps to absolute top right */}
+        {/* --- BUTTONS --- */}
         <div className="flex items-center justify-end gap-2 mb-4 sm:mb-0 sm:absolute sm:top-4 sm:right-4 sm:z-10">
-            
-            {/* Label: visible on mobile and visible on desktop */}
             <span className="text-[10px] font-bold text-slate-500 bg-white/90 backdrop-blur px-2 py-1.5 rounded-lg shadow-sm border border-slate-100/50">
                 Save to Profile
             </span>
