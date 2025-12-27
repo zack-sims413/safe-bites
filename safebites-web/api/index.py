@@ -86,8 +86,21 @@ def analyze_reviews_with_ai(reviews: List[dict]):
     """
     if not reviews:
         return 0, "No reviews available to analyze."
+    
+    # 1. Define keywords that matter to us
+    keywords = ["gluten", "celiac", "cross-contamination", "dedicated fryer", "coeliac"]
 
-    reviews_text = "\n".join([f"- {r['text']}" for r in reviews[:15]]) 
+    # 2. Sort the reviews: Put reviews containing these keywords at the TOP
+    # This ensures that even if we cut off the list, we keep the relevant ones.
+    sorted_reviews = sorted(
+        reviews, 
+        key=lambda r: any(k in r.get('text', '').lower() for k in keywords), 
+        reverse=True
+    )
+
+    # 3. Increase the limit to 40-50 (Llama 3.3 can easily handle this)
+    # We slice the SORTED list now.
+    reviews_text = "\n".join([f"- {r.get('text', '')}" for r in sorted_reviews[:50]]) 
     
     system_prompt = (
         "You are an expert dietician specializing in Celiac Disease and gluten safety. "
@@ -116,32 +129,36 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         print(f"Groq AI Error: {e}")
         return 0, "AI Analysis currently unavailable."
 
-def calculate_wisebites_score(ai_score, rev_count, google_rating, dist_miles):
-    # Safety Check: If AI Score is missing, the score is invalid (0)
-    if not ai_score or ai_score == 0: return 0
-    if not rev_count: rev_count = 0
-    if not google_rating: google_rating = 0
+def calculate_wisebites_score(ai_score, community_avg_rating, safe_count, unsafe_count):
+    """
+    Matches Supabase Trigger Logic Exactly:
+    1. Base AI Score: (AI * 7) -> Max 70 points
+    2. Community Bonus: ((Rating * 2) * 3) -> Max 30 points
+    3. Penalties/Bonuses: -15 for unsafe, +2 for safe
+    4. Normalize: Divide by 10
+    """
+    if ai_score is None: ai_score = 0
+    if community_avg_rating is None: community_avg_rating = 0
     
-    # 1. AI SAFETY (70% of total) - Heavily weighted!
-    # A 10/10 AI score gives 70 points
-    safety_points = ai_score * 7
+    # 1. Base AI Score (Weight: 70%)
+    total_score = float(ai_score) * 7
     
-    # 2. CONFIDENCE (20% of total)
-    # We cap this at 20 reviews. 
-    # (If you have >20 relevant reviews, we trust the data fully)
-    confidence_points = min(rev_count, 20)
+    # 2. Community Rating Bonus (Weight: 30%)
+    # Logic: Rating (0-5) * 2 = 0-10. Multiplied by 3 = 0-30 points.
+    total_score += (float(community_avg_rating) * 2) * 3
     
-    # 3. QUALITY (10% of total)
-    # Uses Google Star Rating (0-5) * 2 = Max 10 points
-    quality_points = google_rating * 2
+    # 3. Apply Penalties & Bonuses
+    total_score -= (unsafe_count * 15) # Harsh penalty for unsafe reports
+    total_score += (safe_count * 2)    # Small bonus for safe confirmations
     
-    # 4. DISTANCE (REMOVED)
-    # We no longer penalize for distance. Safety is safety.
+    # 4. Normalize to 1-10 scale
+    final_score = total_score / 10.0
     
-    # Calculate Total (Max 100)
-    total = (safety_points + confidence_points + quality_points) / 10
+    # 5. Clamp values
+    if final_score > 10.0: final_score = 10.0
+    if final_score < 1.0: final_score = 1.0
     
-    return round(total, 1)
+    return round(final_score, 1)
 
 @lru_cache(maxsize=100) 
 def fetch_google_search(query: str, location: str, lat: float = None, lng: float = None):
@@ -157,7 +174,7 @@ def fetch_google_search(query: str, location: str, lat: float = None, lng: float
     payload = {
         "textQuery": text_query, 
         "minRating": 3.5, 
-        "maxResultCount": 15
+        "maxResultCount": 20
     }
 
     if lat and lng:
@@ -181,7 +198,7 @@ def fetch_serpapi_reviews(place_id: str):
         "engine": "google_maps_reviews",
         "place_id": place_id, 
         "api_key": SERPAPI_KEY,
-        "query": "gluten celiac cross-contamination dedicated fryer", 
+        "query": "gluten celiac", 
         "sort_by": "qualityScore",
         "hl": "en" 
     }
@@ -300,9 +317,9 @@ def search_restaurants(search: SearchRequest):
                         if r["wise_bites_score"] == 0:
                              r["wise_bites_score"] = calculate_wisebites_score(
                                 r["ai_safety_score"],
-                                r["relevant_count"],
-                                r["rating"],
-                                r["distance_miles"]
+                                0, # No community rating known here
+                                0, # No safe count known
+                                0 # No unsafe count known
                             )
         except Exception as e:
             print(f"Batch Error: {e}")
@@ -371,20 +388,32 @@ def get_reviews(req: ReviewRequest):
             "relevant": True
         })
 
-    # --- NEW SECTION: FETCH WISEBITES COMMUNITY REVIEWS ---
+    # --- FETCH WISEBITES COMMUNITY REVIEWS & STATS ---
+    wb_community_avg = 0
+    wb_safe_count = 0
+    wb_unsafe_count = 0
+    
     try:
         # Fetch reviews from your own database
         wb_reviews_response = supabase.table("user_reviews").select("*").eq("place_id", req.place_id).execute()
         wb_reviews = wb_reviews_response.data or []
         
         if wb_reviews:
-            print(f"Found {len(wb_reviews)} WiseBites reviews. Adding to AI context...")
+            print(f"Found {len(wb_reviews)} WiseBites reviews. Calculating stats...")
+            
+            # 1. Calculate Aggregates for Scoring
+            wb_ratings = [r['rating'] for r in wb_reviews if r.get('rating')]
+            if wb_ratings:
+                wb_community_avg = sum(wb_ratings) / len(wb_ratings)
+            
+            wb_safe_count = sum(1 for r in wb_reviews if r.get('did_feel_safe') is True)
+            wb_unsafe_count = sum(1 for r in wb_reviews if r.get('did_feel_safe') is False)
+
+            # 2. Add to AI Context
             for wb_r in wb_reviews:
-                # Format safety status clearly for the AI
                 safety_tag = "SAFE" if wb_r.get('did_feel_safe') else "UNSAFE"
                 comment_text = wb_r.get('comment') or "No specific comment."
                 
-                # Add to the list being sent to AI
                 processed_reviews.append({
                     "source": "WiseBites Community",
                     "text": f"[{safety_tag} REPORT] {comment_text}",
@@ -393,8 +422,6 @@ def get_reviews(req: ReviewRequest):
                     "date": wb_r.get('created_at', "")[:10], 
                     "relevant": True
                 })
-                # Note: We don't increment relevant_count here to keep that metric focused on 'external' validation volume,
-                # but you could if you wanted.
     except Exception as e:
         print(f"Error fetching community reviews: {e}")
     # -------------------------------------------------------
@@ -406,6 +433,15 @@ def get_reviews(req: ReviewRequest):
     # 3. RUN AI ANALYSIS (Now includes both Google + WiseBites reviews)
     print("Running AI Analysis...")
     ai_score, ai_summary = analyze_reviews_with_ai(processed_reviews)
+
+    # --- CALCULATE FINAL COMPOSITE SCORE ---
+    final_wb_score = calculate_wisebites_score(
+        ai_score, 
+        wb_community_avg, 
+        wb_safe_count, 
+        wb_unsafe_count
+    )
+    
 
     # 4. SAVE TO SUPABASE
     try:
@@ -426,6 +462,7 @@ def get_reviews(req: ReviewRequest):
             "relevant_count": relevant_count,
             "average_safety_rating": avg_rating,
             "ai_safety_score": ai_score, 
+            "wise_bites_score": final_wb_score,
             "ai_summary": ai_summary,    
             "last_updated": datetime.now(timezone.utc).isoformat()
         }

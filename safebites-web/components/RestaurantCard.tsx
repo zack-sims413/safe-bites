@@ -265,7 +265,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
                 ) : !place.is_cached && !hasFetched ? (
                 <p className="text-xs text-slate-400 italic flex items-center gap-2 mt-2"><Info className="w-3 h-3" /> Scroll to trigger AI analysis...</p>
                 ) : relevantCount === 0 ? (
-                <div className="flex items-start gap-2 mt-1"><AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" /><p className="text-sm text-slate-500">No reviews found mentioning "gluten".</p></div>
+                <div className="flex items-start gap-2 mt-1"><AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" /><p className="text-sm text-slate-500">No reviews found mentioning gluten or celiac-related reviews.</p></div>
                 ) : wiseBitesScore !== null ? (
                 
                 <div className={`p-3 rounded-xl border ${getScoreColor(wiseBitesScore)}`}>
