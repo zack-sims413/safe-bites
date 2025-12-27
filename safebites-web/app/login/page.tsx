@@ -117,9 +117,6 @@ export default function LoginPage() {
           </Link>
         </div>
         
-        <div className="mt-4 text-center">
-            <a href="/" className="text-xs text-slate-400 hover:text-slate-600">← Back to Search</a>
-        </div>
       </div>
     </div>
   );

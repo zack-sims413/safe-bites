@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "../../../utils/supabase/client";
-import Navbar from "../../../components/Navbar";
 import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
@@ -304,7 +303,6 @@ export default function RestaurantDetailsPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <Navbar />
 
       <main className="max-w-4xl mx-auto px-4 py-8">
         

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../utils/supabase/client";
-import { Loader2, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck, Users, Search } from "lucide-react";
+import { Loader2, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck, Users, Search, Mail, LogOut } from "lucide-react"; // Added LogOut icon
 import Link from "next/link";
 
 export default function SignUpPage() {
@@ -14,18 +14,39 @@ export default function SignUpPage() {
   const [step, setStep] = useState<1 | 2>(1); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   // Data State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null); // New State to track email
+
   const [fullName, setFullName] = useState("");
   const [birthday, setBirthday] = useState("");
-  const [preference, setPreference] = useState<"celiac" | "intolerance" | "allergy">("celiac");
-  
-  // NEW: Liability State
+  const [preference, setPreference] = useState<"celiac" | "intolerance" | "allergy" | "other">("celiac");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // --- HANDLER: STEP 1 (Create Account) ---
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setCurrentUserEmail(session.user.email || null);
+        setStep(2);
+      }
+    };
+    checkSession();
+  }, [supabase.auth]);
+
+  // NEW: Handle Logout during Sign Up
+  const handleLogoutReset = async () => {
+      await supabase.auth.signOut();
+      setStep(1);
+      setCurrentUserEmail(null);
+      setEmail("");
+      setPassword("");
+  };
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -35,13 +56,23 @@ export default function SignUpPage() {
         const { data, error: authError } = await supabase.auth.signUp({
             email,
             password,
+            options: {
+                emailRedirectTo: `${location.origin}/auth/callback?next=/signup`,
+            }
         });
 
         if (authError) throw authError;
 
-        if (data.user) {
+        if (data.user && !data.session) {
+            setVerificationSent(true);
+            return;
+        }
+
+        if (data.session) {
+            setCurrentUserEmail(data.user?.email || "");
             setStep(2);
         }
+
     } catch (err: any) {
         setError(err.message);
     } finally {
@@ -49,13 +80,11 @@ export default function SignUpPage() {
     }
   };
 
-  // --- HANDLER: STEP 2 (Save Profile) ---
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    // 1. VALIDATE LIABILITY AGREEMENT
     if (!agreedToTerms) {
         setError("You must agree to the Terms & Disclaimer to continue.");
         setLoading(false);
@@ -64,7 +93,7 @@ export default function SignUpPage() {
 
     try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error("No user found");
+        if (!user) throw new Error("No session found. Please log in.");
 
         const { error: profileError } = await supabase
             .from("profiles")
@@ -85,6 +114,31 @@ export default function SignUpPage() {
         setLoading(false);
     }
   };
+
+  if (verificationSent) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-white p-4">
+            <div className="max-w-md w-full text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Mail className="w-10 h-10 text-green-600" />
+                </div>
+                <h2 className="text-3xl font-black text-slate-900">Check your inbox!</h2>
+                <p className="text-slate-500 text-lg">
+                    We sent a verification link to <span className="font-bold text-slate-900">{email}</span>.
+                </p>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-sm text-slate-600">
+                    Please click the link in that email to activate your account. Once verified, you can log in and complete your profile.
+                </div>
+                <button 
+                    onClick={() => router.push("/login")}
+                    className="w-full bg-slate-900 text-white font-bold py-3.5 rounded-xl hover:bg-slate-800 transition-all"
+                >
+                    Back to Login
+                </button>
+            </div>
+        </div>
+      );
+  }
 
   return (
     <div className="min-h-screen grid md:grid-cols-2 bg-white">
@@ -125,8 +179,8 @@ export default function SignUpPage() {
                         <Search className="w-5 h-5 text-amber-400" />
                     </div>
                     <div>
-                        <h3 className="font-bold text-lg">Gluten Relevant Summaries</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed">Our anaysis is tailored for those with Celiac and Gluten Intolerance.</p>
+                        <h3 className="font-bold text-lg">Personalized Search</h3>
+                        <p className="text-slate-400 text-sm leading-relaxed">Filter specifically for dedicated fryers, gluten-free menus, and knowledgeable staff.</p>
                     </div>
                 </div>
             </div>
@@ -201,6 +255,27 @@ export default function SignUpPage() {
             {/* --- STEP 2: PROFILE & PREFERENCES --- */}
             {step === 2 && (
                 <form onSubmit={handleSaveProfile} className="space-y-6 animate-in slide-in-from-right duration-300">
+                    
+                    {/* NEW: USER STATUS BANNER */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                            <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                {currentUserEmail?.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Signing up as</span>
+                                <span className="text-xs font-bold text-slate-900 truncate">{currentUserEmail}</span>
+                            </div>
+                        </div>
+                        <button 
+                            type="button"
+                            onClick={handleLogoutReset}
+                            className="text-xs text-red-500 font-bold hover:text-red-700 flex items-center gap-1 px-2 py-1 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                            <LogOut className="w-3 h-3" /> Not you?
+                        </button>
+                    </div>
+
                     <div>
                         <h2 className="text-3xl font-bold text-slate-900 mb-2">Welcome! 👋</h2>
                         <p className="text-slate-500">Tell us a bit about yourself so we can personalize your results.</p>
@@ -232,7 +307,8 @@ export default function SignUpPage() {
                             {[
                                 { id: "celiac", label: "Celiac Disease", desc: "I need strict protocols (dedicated fryers, no cross-contact)." },
                                 { id: "intolerance", label: "Gluten Intolerant / Sensitivity", desc: "I avoid gluten, but cross-contact is less critical." },
-                                { id: "allergy", label: "Wheat Allergy", desc: "I strictly avoid wheat." }
+                                { id: "allergy", label: "Wheat Allergy", desc: "I strictly avoid wheat." },
+                                { id: "other", label: "Other", desc: "Supporting friend or loved one." }
                             ].map((opt) => (
                                 <button
                                     key={opt.id}
@@ -269,7 +345,6 @@ export default function SignUpPage() {
                             </span>
                         </label>
                     </div>
-                    {/* --------------------------------- */}
 
                     <button 
                         type="submit" 

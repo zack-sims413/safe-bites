@@ -1,29 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-// RELATIVE IMPORT: Adjust if your folder structure is different
-import { createClient } from "../utils/supabase/client"; 
-import { useRouter } from "next/navigation";
-import { LogOut, Heart, Search } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { createClient } from "../utils/supabase/client";
+import { useRouter, usePathname } from "next/navigation"; // Added usePathname
+import { LogOut, Heart, Search, User, Settings, ChevronDown } from "lucide-react";
 
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
   const router = useRouter();
+  const pathname = usePathname(); // Hooks into route changes
 
-  // Check if user is logged in
+  // Hide Navbar on Login/Signup pages if you want (Optional, but often cleaner)
+  // if (pathname === "/login" || pathname === "/signup") return null;
+
   useEffect(() => {
+    // 1. Get user immediately
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
     };
     getUser();
-  }, [supabase]);
+
+    // 2. Listen for ANY auth change (Login, Logout, Auto-refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    setMenuOpen(false);
     router.refresh();
     router.push("/login");
   };
@@ -43,51 +67,71 @@ export default function Navbar() {
             </span>
           </Link>
 
-          {/* RIGHT: Navigation Links */}
-          <div className="flex items-center gap-6">
+          {/* RIGHT: Navigation */}
+          <div className="flex items-center gap-3 sm:gap-6">
             
-            {/* Favorites Link (Only show if logged in) */}
-            {user && (
-              <Link 
-                href="/favorites" 
-                className="hidden sm:flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-green-600 transition-colors"
-              >
-                <Heart className="w-4 h-4" />
-                My Saved Places
-              </Link>
-            )}
-
-            {/* Auth Buttons */}
             {user ? (
-              <div className="flex items-center gap-4">
-                <span className="text-xs text-slate-400 hidden sm:block">
-                  {user.email}
-                </span>
-                <button
-                  onClick={handleLogout}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                  title="Sign Out"
+              <>
+                {/* 1. SAVED PLACES */}
+                <Link 
+                  href="/favorites" 
+                  className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-green-600 transition-colors p-2"
+                  title="My Saved Places"
                 >
-                  <LogOut className="w-5 h-5" />
-                </button>
-              </div>
+                  <Heart className="w-5 h-5" />
+                  <span className="hidden sm:block">Saved</span>
+                </Link>
+
+                {/* 2. USER DROPDOWN */}
+                <div className="relative" ref={menuRef}>
+                  <button 
+                    onClick={() => setMenuOpen(!menuOpen)}
+                    className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-full border border-slate-200 hover:bg-slate-50 transition-all"
+                  >
+                    <div className="w-8 h-8 bg-slate-900 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                      {user.email?.slice(0, 2).toUpperCase()}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {menuOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="px-4 py-3 border-b border-slate-50">
+                        <p className="text-xs text-slate-400 font-medium uppercase">Signed in as</p>
+                        <p className="text-sm font-bold text-slate-900 truncate">{user.email}</p>
+                      </div>
+                      
+                      <Link 
+                        href="/profile" 
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                        Profile Settings
+                      </Link>
+                      
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors text-left"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
-              // --- UPDATED SECTION: LOGGED OUT STATE ---
+              // LOGGED OUT STATE
               <div className="flex items-center gap-4">
-                <Link
-                  href="/login"
-                  className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-                >
+                <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900">
                   Log in
                 </Link>
-                <Link
-                  href="/signup"
-                  className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm hover:shadow-md"
-                >
+                <Link href="/signup" className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">
                   Sign Up
                 </Link>
               </div>
-              // ----------------------------------------
             )}
           </div>
         </div>

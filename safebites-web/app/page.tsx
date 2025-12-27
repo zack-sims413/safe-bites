@@ -82,42 +82,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
       
-      {/* NAVBAR */}
-      <nav className="flex justify-between items-center px-6 py-4 bg-white border-b border-slate-100 sticky top-0 z-50">
-        <div className="font-extrabold text-green-700 text-xl tracking-tight">WiseBites</div>
-        <div>
-          {user ? (
-            <div className="flex items-center gap-6">
-              {/* NEW: Favorites Link */}
-              <Link 
-                href="/favorites" 
-                className="text-sm font-semibold text-slate-600 hover:text-green-600 transition-colors flex items-center gap-2"
-              >
-                My Saved Places
-              </Link>
-
-              <div className="w-px h-4 bg-slate-200 hidden md:block"></div>
-
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-slate-400 hidden md:inline">{user.email}</span>
-                <button 
-                  onClick={handleSignOut}
-                  className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
-                >
-                  Sign Out
-                </button>
-              </div>
-            </div>
-          ) : (
-            <Link 
-              href="/login" 
-              className="text-sm font-bold text-green-600 hover:text-green-700 bg-green-50 px-4 py-2 rounded-lg transition-colors"
-            >
-              Sign In
-            </Link>
-          )}
-        </div>
-      </nav>
 
       {/* HERO SECTION */}
       <div className="bg-white border-b border-slate-200 shadow-sm">
