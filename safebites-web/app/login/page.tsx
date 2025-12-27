@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const router = useRouter();
   const supabase = createClient();
@@ -17,22 +18,27 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setMessage("");
+    setError(null);
 
-    // Try to sign in
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password
+        });
+        if (error) throw error;
 
-    if (error) {
-      setMessage(error.message);
-      setLoading(false);
-    } else {
-      router.push("/"); // Redirect to Home on success
-      router.refresh(); // Refresh to update the UI state
-    }
-  };
+        // FIX: Force a hard refresh.
+        // This clears the Next.js client cache and guarantees the 
+        // middleware sees the new session cookie immediately.
+        window.location.href = "/"; 
+        
+    } catch (err: any) {
+        setError(err.message);
+        setLoading(false); // Only stop loading if there is an error
+    } 
+    // Remove the 'finally' block that turns off loading.
+    // We want it to keep spinning until the page hard-refreshes.
+};
 
   const handleSignUp = async () => {
     // 1. Manual Validation

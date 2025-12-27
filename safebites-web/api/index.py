@@ -181,7 +181,7 @@ def fetch_serpapi_reviews(place_id: str):
         "engine": "google_maps_reviews",
         "place_id": place_id, 
         "api_key": SERPAPI_KEY,
-        "query": "gluten celiac", 
+        "query": "gluten celiac cross-contamination dedicated fryer", 
         "sort_by": "qualityScore",
         "hl": "en" 
     }
