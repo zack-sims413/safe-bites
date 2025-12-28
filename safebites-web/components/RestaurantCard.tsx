@@ -12,7 +12,8 @@ interface Restaurant {
   name: string;
   address: string;
   city: string | null;
-  rating: number;
+  rating: number; // Generic Google Rating
+  average_safety_rating?: number | null; // NEW: Specific Celiac Rating
   distance_miles: number | null;
   is_open_now: boolean | null;
   hours_schedule: string[];
@@ -26,24 +27,37 @@ interface Restaurant {
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
   
-  // --- UPDATED SCORE CALCULATION HELPER ---
-  // Matches the new Python/SQL Logic: (AI * 7) + Community Bonuses
-  // Since we don't have community stats here, we default them to 0.
-  const calculateWiseBitesScore = (aiScore: number, googleRating: number, googleCount: number) => {
-    if (aiScore === null || aiScore === undefined || aiScore === 0) return null;
+  // --- UPDATED STRICT SCORE CALCULATOR ---
+  // Mirrors Index.py logic EXACTLY:
+  // 1. Strict Null: If no relevant reviews, return NULL.
+  // 2. Cold Start: 80% AI + 20% Safety Rating (Stepped by volume)
+  const calculateWiseBitesScore = (aiScore: number, safetyRating: number, reviewCount: number) => {
+    // Basic validity check
+    if (!aiScore || aiScore === 0) return null;
     
-    // We assume 0 WiseBites reviews here (Cold Start Mode)
-    // Formula: (AI * 8) + (GoogleRating * 4)
-    
+    // RULE 1: STRICT NULL CHECK
+    // If there are 0 relevant reviews, we cannot generate a WiseScore.
+    // (Note: In this card view, we assume 0 community reviews for the fallback calc)
+    if (!reviewCount || reviewCount === 0) {
+        return null;
+    }
+
+    // MODE B: Cold Start (Relevant Google Data ONLY)
+    // Base: AI * 8
     let total = aiScore * 8.0;
     
-    if (googleCount > 3) {
-        total += (googleRating * 4.0);
+    // Boost based on volume (Stepped Logic)
+    if (reviewCount > 3) {
+        // Established: + Rating * 4
+        total += (safetyRating * 4.0);
+    } else {
+        // New/Low Volume (1-3 reviews): + Rating * 2
+        total += (safetyRating * 2.0);
     }
     
     const final = total / 10.0;
     return Math.max(1.0, Math.min(10.0, parseFloat(final.toFixed(1))));
-};
+  };
 
   // --- STATE: Data ---
   const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
@@ -62,7 +76,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
     // UPDATE: Must pass all 3 arguments now!
     return calculateWiseBitesScore(
         place.ai_safety_score || 0,
-        place.rating || 0,         // Pass Google Rating
+        place.average_safety_rating || 0, // Pass average Safety Rating from relevant reviews
         place.relevant_count || 0  // Pass Google Count
     );
   });
@@ -170,6 +184,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
         .then((data) => {
           const aiScore = data.ai_safety_score || 0;
           const revCount = data.relevant_count || 0;
+          const safetyRating = data.average_safety_rating || 0;
           
           setSafetyScore(aiScore);
           setSummary(data.ai_summary);
@@ -181,8 +196,8 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
           } else {
             setWiseBitesScore(calculateWiseBitesScore(
                 aiScore, 
-                place.rating || 0,        // Pass Google Rating
-                place.relevant_count || 0 // Pass Google Count
+                safetyRating,        // Pass Safety Rating
+                revCount // Pass Review Count
             ));
           }
           
@@ -206,7 +221,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       <div className="p-5 pb-0 relative"> 
         <div className="flex justify-between items-start gap-4">
           <div className="flex-1 min-w-0">
-            <Link href={`/restaurant/${place.place_id}`} target="_blank" rel="noopener noreferrer" className="group/link block">
+            <Link href={`/restaurant/${place.place_id}`} className="group/link block">
               <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover/link:text-green-700 group-hover/link:underline transition-colors break-words">
                 {place.name}
               </h2>
@@ -312,8 +327,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       
         <Link 
             href={`/restaurant/${place.place_id}`}
-            target="_blank" 
-            rel="noopener noreferrer"
             className="mt-4 block w-full text-center py-2.5 rounded-xl bg-white border-2 border-slate-100 text-slate-600 hover:border-green-500 hover:text-green-700 font-bold text-sm transition-all"
         >
             View Full Details & Reviews

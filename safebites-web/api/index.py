@@ -42,6 +42,8 @@ class ReviewRequest(BaseModel):
     rating: Optional[float] = 0.0
     # NEW FIELD
     hours_schedule: Optional[List[str]] = None
+    # Flag to force AI re-analysis (e.g. after user review)
+    force_refresh: Optional[bool] = False
 
 # 3. Helper Functions
 
@@ -105,10 +107,13 @@ def analyze_reviews_with_ai(reviews: List[dict]):
     system_prompt = (
         "You are an expert dietician specializing in Celiac Disease and gluten safety. "
         "Analyze the following restaurant reviews and determine if this place is safe for someone with Celiac Disease. "
+        "IMPORTANT: Reviews labeled '[WiseBites Community]' are from verified Celiac users of our app. "
+        "Treat these community reviews as the highest source of truth. "
+        "If a community member says they got sick, take it very seriously. "
         "Focus on keywords like 'cross-contamination', 'dedicated fryer', 'separate prep area', and 'got sick'. "
         "Return a JSON object with exactly two keys: "
         "'score' (an integer 1-10, where 10 is perfectly safe and 1 is dangerous) and "
-        "'summary' (a concise 2-sentence explanation of the rating)."
+        "'summary' (a concise 2-sentence explanation of the rating, referencing community feedback if present)."
     )
 
     try:
@@ -129,38 +134,47 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         print(f"Groq AI Error: {e}")
         return 0, "AI Analysis currently unavailable."
 
-def calculate_wisebites_score(ai_score, google_rating, google_rev_count, wb_avg_rating, wb_safe_count, wb_unsafe_count):
+def calculate_wisebites_score(ai_score, safety_rating, relevant_rev_count, wb_avg_rating, wb_safe_count, wb_unsafe_count):
     """
     Hybrid Scoring Logic (Mirrors SQL):
     - IF WiseBites reviews exist: 70% AI + 30% Community + Bonuses
     - ELSE: 80% AI + 20% Google Rating
     """
     if ai_score is None: ai_score = 0
-    if google_rating is None: google_rating = 0
-    if google_rev_count is None: google_rev_count = 0
+    if safety_rating is None: safety_rating = 0
+    if relevant_rev_count is None: relevant_rev_count = 0
     
     wb_review_count = wb_safe_count + wb_unsafe_count
+
+    # RULE 1: STRICT NULL CHECK
+    # If no one (Community or Google) has said anything relevant, we return None.
+    if wb_review_count == 0 and relevant_rev_count == 0:
+        return None
     
-    total_score = 0.0
+    final_score = 0.0
 
     if wb_review_count > 0:
         # MODE A: VERIFIED (Community Data)
-        total_score = float(ai_score) * 7
-        total_score += (float(wb_avg_rating) * 2) * 3
+        total = float(ai_score) * 7
+        total += (float(wb_avg_rating) * 2) * 3
         # Penalties/Bonuses
-        total_score -= (wb_unsafe_count * 15)
-        total_score += (wb_safe_count * 2)
+        total -= (wb_unsafe_count * 15)
+        total += (wb_safe_count * 2)
+        final_score = total / 10.0
     else:
-        # MODE B: COLD START (Google Data)
-        total_score = float(ai_score) * 8
+        # MODE B: COLD START (Relevant Google Data ONLY)
+        # We only get here if relevant_rev_count > 0 due to Rule 1.
         
-        # Only use Google Rating if there is some volume (>3 reviews)
-        if google_rev_count > 3:
-            # Google Rating (0-5) * 4 = Max 20 points
-            total_score += (float(google_rating) * 4)
-
-    # Normalize
-    final_score = total_score / 10.0
+        total = float(ai_score) * 8
+        
+        # Established (>3 relevant reviews): Safety Rating * 4
+        if relevant_rev_count > 3:
+            total += (float(safety_rating) * 4)
+        # New (1-3 relevant reviews): Safety Rating * 2
+        else:
+            total += (float(safety_rating) * 2)
+            
+        final_score = total / 10.0
     
     # Clamp
     return max(1.0, min(round(final_score, 1), 10.0))
@@ -186,7 +200,7 @@ def fetch_google_search(query: str, location: str, lat: float = None, lng: float
         payload["locationBias"] = {
             "circle": {
                 "center": {"latitude": lat, "longitude": lng},
-                "radius": 5000.0 
+                "radius": 40000.0
             }
         }
 
@@ -251,11 +265,15 @@ def search_restaurants(search: SearchRequest):
     if "places" in google_data:
         for place in google_data["places"]:
             pid = place.get("id")
-            if pid: place_ids.append(pid)
 
             lat = place.get("location", {}).get("latitude")
             lng = place.get("location", {}).get("longitude")
             dist = calculate_distance(user_lat, user_lon, lat, lng) if user_lat else None
+
+            if dist is not None and dist > 30.0:
+                continue  # Skip places beyond 30 miles
+
+            if pid: place_ids.append(pid)
             
             address_str = place.get("formattedAddress", "")
             city_extracted = None
@@ -263,8 +281,6 @@ def search_restaurants(search: SearchRequest):
                 parts = address_str.split(",")
                 if len(parts) >= 2:
                     city_extracted = parts[-3].strip() if len(parts) > 3 else parts[1].strip()
-
-            opening_hours = place.get("regularOpeningHours", {})
 
             raw_hours = place.get("regularOpeningHours", {}).get("weekdayDescriptions", [])
             cleaned_hours = [
@@ -285,7 +301,7 @@ def search_restaurants(search: SearchRequest):
                 "ai_summary": None,
                 "relevant_count": 0,
                 "is_cached": False,
-                "wise_bites_score": 0 
+                "wise_bites_score": None
             })
 
     if place_ids:
@@ -313,66 +329,66 @@ def search_restaurants(search: SearchRequest):
                     if is_fresh:
                         r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
                         r["ai_summary"] = cached.get("ai_summary")
+                        
+                        # Grab Average Safety Rating
+                        safety_rating = float(cached.get("average_safety_rating") or 0)
+                        
                         google_count = int(cached.get("relevant_count") or 0)
-                        # wb_count = int(cached.get("community_review_count") or 0)
-                        r["relevant_count"] = google_count
+                        wb_count = int(cached.get("community_review_count") or 0)
+                        r["relevant_count"] = google_count + wb_count
                         r["is_cached"] = True
                         
                         # Only calculate manually if DB score was missing
-                        if r["wise_bites_score"] == 0:
-                            # We pass 0 for all community stats to trigger "Cold Start" mode
-                            # We pass the Google Rating & Count to get the boost
+                        if r["wise_bites_score"] is None or r["wise_bites_score"] == 0:
+                            # Pass 0 for safety_rating if google_count is 0 to ensure NULL return
+                            # WE DO NOT PASS r["rating"] (Generic) HERE ANYMORE
                             r["wise_bites_score"] = calculate_wisebites_score(
                                 r["ai_safety_score"],
-                                r["rating"],           # Google Rating
-                                r["relevant_count"],   # Google Count
-                                0, 0, 0                # No Community Data known in search list
+                                safety_rating, 
+                                google_count,
+                                0, 0, 0 
                             )
         except Exception as e:
             print(f"Batch Error: {e}")
 
+    # Sort
     def sort_key(x):
-        sb_score = x["wise_bites_score"]
+        # Handle None scores by treating them as -1 so they go to bottom
+        sb_score = x["wise_bites_score"] if x["wise_bites_score"] is not None else -1
         dist = x["distance_miles"] or 9999
-        if sb_score > 0:
-            return (0, -sb_score) 
-        else:
-            return (1, dist)
+        if sb_score > 0: return (0, -sb_score) 
+        else: return (1, dist)
 
-    if user_lat:
-        raw_results.sort(key=sort_key)
-    else:
-        raw_results.sort(key=lambda x: x["rating"], reverse=True)
+    if user_lat: raw_results.sort(key=sort_key)
+    else: raw_results.sort(key=lambda x: x["rating"], reverse=True)
 
     return {"results": raw_results}
 
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
-    """
-    Check Cache -> Fetch SerpApi -> Fetch Community Reviews -> Run AI -> Save
-    """
-    # 1. CHECK SUPABASE CACHE
-    try:
-        response = supabase.table("restaurants").select("*").eq("place_id", req.place_id).execute()
-        data = response.data
-        if data:
-            record = data[0]
-            last_updated = datetime.fromisoformat(record["last_updated"].replace('Z', '+00:00'))
-            # Cache is valid for 30 days
-            if datetime.now(timezone.utc) - last_updated < timedelta(days=30): 
-                print("Returning Cached Data")
-                return {
-                    "reviews": record["reviews"],
-                    "relevant_count": record["relevant_count"],
-                    "average_safety_rating": record["average_safety_rating"],
-                    "ai_safety_score": record.get("ai_safety_score", 0), 
-                    "ai_summary": record.get("ai_summary", "No summary available."), 
-                    "source": "Cache"
-                }
-    except Exception as e:
-        print(f"Supabase Read Error: {e}")
+    # 1. CHECK CACHE (Skip if force_refresh is True)
+    if not req.force_refresh:
+        try:
+            response = supabase.table("restaurants").select("*").eq("place_id", req.place_id).execute()
+            data = response.data
+            if data:
+                record = data[0]
+                last_updated = datetime.fromisoformat(record["last_updated"].replace('Z', '+00:00'))
+                if datetime.now(timezone.utc) - last_updated < timedelta(days=30): 
+                    print("Returning Cached Data")
+                    return {
+                        "reviews": record["reviews"],
+                        "relevant_count": record["relevant_count"],
+                        "average_safety_rating": record["average_safety_rating"],
+                        "ai_safety_score": record.get("ai_safety_score", 0), 
+                        "wise_bites_score": record.get("wise_bites_score", 0), 
+                        "ai_summary": record.get("ai_summary", "No summary available."), 
+                        "source": "Cache"
+                    }
+        except Exception as e:
+            print(f"Supabase Read Error: {e}")
 
-    # 2. FETCH GOOGLE DATA (SerpApi)
+    # 2. FETCH GOOGLE DATA
     print("Fetching fresh data from SerpApi...")
     raw_reviews = fetch_serpapi_reviews(req.place_id)
     
@@ -387,7 +403,7 @@ def get_reviews(req: ReviewRequest):
         relevant_count += 1
         total_rating_sum += rating
         processed_reviews.append({
-            "source": "Google (via SerpApi)",
+            "source": "Google",
             "text": text_content,
             "rating": rating,
             "author": r.get("user", {}).get("name", "Anonymous"),
@@ -395,20 +411,18 @@ def get_reviews(req: ReviewRequest):
             "relevant": True
         })
 
-    # --- FETCH WISEBITES COMMUNITY REVIEWS & STATS ---
+    # --- FETCH WISEBITES COMMUNITY REVIEWS ---
     wb_community_avg = 0
     wb_safe_count = 0
     wb_unsafe_count = 0
     
     try:
-        # Fetch reviews from your own database
         wb_reviews_response = supabase.table("user_reviews").select("*").eq("place_id", req.place_id).execute()
         wb_reviews = wb_reviews_response.data or []
         
         if wb_reviews:
-            print(f"Found {len(wb_reviews)} WiseBites reviews. Calculating stats...")
+            print(f"Found {len(wb_reviews)} WiseBites reviews.")
             
-            # 1. Calculate Aggregates for Scoring
             wb_ratings = [r['rating'] for r in wb_reviews if r.get('rating')]
             if wb_ratings:
                 wb_community_avg = sum(wb_ratings) / len(wb_ratings)
@@ -416,13 +430,12 @@ def get_reviews(req: ReviewRequest):
             wb_safe_count = sum(1 for r in wb_reviews if r.get('did_feel_safe') is True)
             wb_unsafe_count = sum(1 for r in wb_reviews if r.get('did_feel_safe') is False)
 
-            # 2. Add to AI Context
             for wb_r in wb_reviews:
                 safety_tag = "SAFE" if wb_r.get('did_feel_safe') else "UNSAFE"
                 comment_text = wb_r.get('comment') or "No specific comment."
                 
                 processed_reviews.append({
-                    "source": "WiseBites Community",
+                    "source": "WiseBites Community", # Matches Prompt Label
                     "text": f"[{safety_tag} REPORT] {comment_text}",
                     "rating": wb_r.get('rating', 0),
                     "author": "WiseBites Member",
@@ -431,26 +444,29 @@ def get_reviews(req: ReviewRequest):
                 })
     except Exception as e:
         print(f"Error fetching community reviews: {e}")
-    # -------------------------------------------------------
 
-    avg_rating = 0
+    # Calculate Average Safety Rating (from Google Relevant Reviews)
+    avg_safety_rating = 0
     if relevant_count > 0:
-        avg_rating = round(total_rating_sum / relevant_count, 1)
-
-    # 3. RUN AI ANALYSIS (Now includes both Google + WiseBites reviews)
+        avg_safety_rating = round(total_rating_sum / relevant_count, 1)
+    
+    # 3. RUN AI ANALYSIS
     print("Running AI Analysis...")
     ai_score, ai_summary = analyze_reviews_with_ai(processed_reviews)
 
-    # --- CALCULATE FINAL COMPOSITE SCORE ---
+    # --- CALCULATE SCORE ---
+    # Point #2: Use avg_safety_rating if valid, else generic req.rating
+    rating_to_use = avg_safety_rating if relevant_count > 0 else req.rating
+
+    # --- CALCULATE SCORE ---
     final_wb_score = calculate_wisebites_score(
         ai_score, 
-        req.rating,      # Google Rating from request
-        relevant_count,  # Google Count from SerpApi
+        avg_safety_rating, # STRICTLY passing safety rating only
+        relevant_count,    # Google Count
         wb_community_avg, 
         wb_safe_count, 
         wb_unsafe_count
     )
-    
 
     # 4. SAVE TO SUPABASE
     try:
@@ -461,30 +477,25 @@ def get_reviews(req: ReviewRequest):
             "address": req.address,
             "city": req.city or extract_city(req.address),
             "rating": req.rating,
-            
-            # --- NEW: SAVE HOURS SCHEDULE ---
-            # This works because we updated ReviewRequest to accept it
             "hours_schedule": req.hours_schedule,
-            # --------------------------------
-
             "reviews": processed_reviews,
             "relevant_count": relevant_count,
-            "average_safety_rating": avg_rating,
+            "average_safety_rating": avg_safety_rating, # Saving the specific safety rating
             "ai_safety_score": ai_score, 
             "wise_bites_score": final_wb_score,
             "ai_summary": ai_summary,    
             "last_updated": datetime.now(timezone.utc).isoformat()
         }
         supabase.table("restaurants").upsert(upsert_data).execute()
-        print("Saved new data to Supabase")
     except Exception as e:
         print(f"Supabase Write Error: {e}")
 
     return {
         "reviews": processed_reviews, 
         "relevant_count": relevant_count, 
-        "average_safety_rating": avg_rating,
+        "average_safety_rating": avg_safety_rating,
         "ai_safety_score": ai_score,
+        "wise_bites_score": final_wb_score,
         "ai_summary": ai_summary,
         "source": "SerpApi + Groq"
     }

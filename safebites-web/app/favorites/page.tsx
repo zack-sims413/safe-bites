@@ -14,7 +14,6 @@ interface PlaceItem {
     place_id: string;
     name: string;
     city: string;
-    // Removed photo_url
     wise_bites_score: number | null; 
     ai_safety_score: number | null; 
   };

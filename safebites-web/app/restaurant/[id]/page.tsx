@@ -23,6 +23,7 @@ interface Restaurant {
   relevant_count?: number;
   wise_bites_score?: number;
   reviews?: any[]; 
+  average_safety_rating?: number; // Added to interface
 }
 
 interface CommunityReview {
@@ -179,13 +180,14 @@ export default function RestaurantDetailsPage() {
     if (restaurantData) {
       setPlace(restaurantData);
       
-      // C. Calculate Score using BOTH data sources
-      // Check if a manual override score exists in DB, otherwise calculate it dynamically
+      // STRICT LOGIC: Only use average_safety_rating. If it's missing or 0, pass 0.
+      const safetyRating = restaurantData.average_safety_rating || 0;
+
       const score = restaurantData.wise_bites_score || calculateWiseBitesScore(
         restaurantData.ai_safety_score, 
         restaurantData.relevant_count, 
-        restaurantData.rating,
-        safeUserReviews // <--- Passing the reviews we just fetched
+        safetyRating, // STRICTLY passing Safety Rating
+        safeUserReviews 
       );
       setCalculatedScore(score);
 
@@ -198,6 +200,34 @@ export default function RestaurantDetailsPage() {
 
     setLoading(false);
   }, [id, supabase]);
+
+  // NEW: Handle Review Submit -> Force AI Refresh
+  const handleReviewSubmitted = async () => {
+    setLoading(true); // Show loading state while AI thinks
+    
+    // 1. Force the AI to re-analyze immediately via API
+    try {
+        if (place) {
+            await fetch("/api/reviews", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    place_id: place.place_id,
+                    name: place.name,
+                    address: place.address,
+                    city: place.city,
+                    rating: place.rating,
+                    force_refresh: true // <--- Point #6: Force refresh
+                })
+            });
+        }
+    } catch (e) {
+        console.error("Failed to refresh AI analysis", e);
+    }
+
+    // 2. Re-fetch data from DB to show new score/reviews
+    await fetchData();
+  };
 
   // TRIGGER: This runs once when the page loads (or when ID changes)
   useEffect(() => {
@@ -220,70 +250,56 @@ export default function RestaurantDetailsPage() {
     return val * multiplier;
   };
 
+  // UPDATED FRONTEND SCORING LOGIC (Matching Strict Python Rule)
   const calculateWiseBitesScore = (
     aiScore: number | null | undefined, 
     revCount: number | null | undefined, 
-    googleRating: number | null | undefined,
+    safetyRating: number | null | undefined, 
     communityReviews: CommunityReview[]
   ) => {
-    // 1. Defaut/Fallback
     if (!aiScore) return null;
     
-    // 2. Constants for weighting
-    let finalScore = aiScore * 7; // Base AI Score (scale 0-70 initially)
-    let maxPoints = 70; // We will divide by this denominator at the end
-
-    // 3. Community Impact (The "Real Human" Factor)
+    // RULE 1: STRICT NULL CHECK
+    // If no community reviews AND no relevant google reviews, return null.
+    if (communityReviews.length === 0 && (!revCount || revCount === 0)) {
+        return null;
+    }
+    
+    let finalScore = 0;
+    
+    // MODE A: Community Data Exists
     if (communityReviews.length > 0) {
-        // Calculate average community rating (1-5 stars)
         const totalStars = communityReviews.reduce((acc, r) => acc + r.rating, 0);
         const avgCommunityRating = totalStars / communityReviews.length;
-        
-        // Count safety flags
         const unsafeReports = communityReviews.filter(r => !r.did_feel_safe).length;
         const safeReports = communityReviews.filter(r => r.did_feel_safe).length;
 
-        // WEIGHTING LOGIC:
-        // Community Rating is worth up to 30 points (3 points per star * 2)
-        // This effectively replaces the generic Google "Quality Points"
-        const communityPoints = (avgCommunityRating * 2) * 3; 
+        // 70% AI + 30% Community
+        let total = aiScore * 7.0;
+        total += (avgCommunityRating * 2.0) * 3.0; 
+        total -= (unsafeReports * 15.0);
+        total += (safeReports * 2.0);
         
-        finalScore += communityPoints;
-        maxPoints += 30;
-
-        // SAFETY VETO (The "Penalty" Logic)
-        // If someone felt unsafe, we punish the score heavily (-1.5 points off the final 10.0 scale per incident)
-        if (unsafeReports > 0) {
-            // We subtract from the raw total before division
-            // 1.5 points on a 10.0 scale = 15 points on our 100 scale
-            finalScore -= (unsafeReports * 15);
-        }
-
-        // SAFETY BONUS
-        // If they felt safe, we give a tiny nudge boost
-        if (safeReports > 0) {
-            finalScore += (safeReports * 2); 
-        }
-
-    } else {
-        // Fallback to Google Data if no community reviews exist (Your old logic)
-        const rating = googleRating || 0; 
+        finalScore = total / 10.0;
+    } 
+    // MODE B: Cold Start (Relevant Google Data ONLY)
+    else {
+        const rating = safetyRating || 0; 
         const count = revCount || 0;
         
-        const confidencePoints = Math.min(count, 20); // Max 20 points for volume
-        const qualityPoints = rating * 2; // Max 10 points for Google stars
+        let total = aiScore * 8.0;
+
+        if (count > 3) {
+            total += (rating * 4.0);
+        } else {
+            // New/Low Volume: + Rating * 2 
+            total += (rating * 2.0);
+        } 
         
-        finalScore += confidencePoints + qualityPoints;
-        maxPoints += 30; // Denominator matches to keep scale roughly 0-10
+        finalScore = total / 10.0;
     }
 
-    // 4. Normalize to 0.0 - 10.0
-    let normalized = finalScore / (maxPoints / 10);
-    
-    // Cap strictly between 1.0 and 10.0
-    normalized = Math.max(1.0, Math.min(10.0, normalized));
-
-    return parseFloat(normalized.toFixed(1));
+    return Math.max(1.0, Math.min(10.0, parseFloat(finalScore.toFixed(1))));
   };
 
   const getScoreColor = (score: number) => {
@@ -451,10 +467,10 @@ export default function RestaurantDetailsPage() {
                       */}
                       {/* @ts-ignore - Assuming you will update ReviewForm next */}
                       <ReviewForm 
-                        placeId={place.place_id} 
-                        onReviewSubmitted={() => fetchData()} 
-                        existingReview={currentUserReview} 
-                      />
+                            placeId={place.place_id} 
+                            onReviewSubmitted={handleReviewSubmitted} 
+                            existingReview={currentUserReview} 
+                        />
                    </div>
                 </div>
                 <div className="lg:col-span-7 space-y-6">
