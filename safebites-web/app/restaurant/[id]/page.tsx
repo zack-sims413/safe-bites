@@ -7,10 +7,11 @@ import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
   Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
-  Heart, X, Clock, ChevronDown
+  Heart, X, Clock, ChevronDown, Camera, AlertTriangle
 } from "lucide-react";
+import Image from "next/image"; // Optimization
 
-// ... (Interfaces remain the same) ...
+// ... (Interfaces) ...
 interface Restaurant {
   place_id: string;
   name: string;
@@ -23,12 +24,12 @@ interface Restaurant {
   relevant_count?: number;
   wise_bites_score?: number;
   reviews?: any[]; 
-  average_safety_rating?: number; // Added to interface
+  average_safety_rating?: number; 
 }
 
 interface CommunityReview {
   id: string;
-  user_id: string; // Added user_id to interface to track ownership
+  user_id: string;
   rating: number;
   comment: string | null;
   created_at: string;
@@ -37,6 +38,10 @@ interface CommunityReview {
   did_feel_safe: boolean;
   has_dedicated_fryer: boolean;
   is_dedicated_gluten_free: boolean;
+  image_urls?: string[] | null; // <--- NEW: Images
+  profiles?: {                  // <--- NEW: Joined Profile Data
+      dietary_preference: string;
+  };
 }
 
 export default function RestaurantDetailsPage() {
@@ -47,9 +52,10 @@ export default function RestaurantDetailsPage() {
   const [place, setPlace] = useState<Restaurant | null>(null);
   const [sortedGoogleReviews, setSortedGoogleReviews] = useState<any[]>([]);
   const [communityReviews, setCommunityReviews] = useState<CommunityReview[]>([]);
-  const [currentUserReview, setCurrentUserReview] = useState<CommunityReview | null>(null); // NEW: Track user's review
+  const [currentUserReview, setCurrentUserReview] = useState<CommunityReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [calculatedScore, setCalculatedScore] = useState<number | null>(null);
+  const [allPhotos, setAllPhotos] = useState<string[]>([]); // <--- NEW: Aggregated Photos
   
   // Feedback State
   const [feedbackStatus, setFeedbackStatus] = useState<"none" | "helpful" | "unhelpful">("none");
@@ -65,30 +71,11 @@ export default function RestaurantDetailsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user || !id) return;
 
-    // Check Favorites
-    const { data: fav } = await supabase
-        .from('favorites')
-        .select('id')
-        .eq('place_id', id)
-        .eq('user_id', user.id)
-        .single();
-    
-    if (fav) {
-        setUserAction('saved');
-        return;
-    }
+    const { data: fav } = await supabase.from('favorites').select('id').eq('place_id', id).eq('user_id', user.id).single();
+    if (fav) { setUserAction('saved'); return; }
 
-    // Check Dislikes
-    const { data: dis } = await supabase
-        .from('dislikes')
-        .select('id')
-        .eq('place_id', id)
-        .eq('user_id', user.id)
-        .single();
-
-    if (dis) {
-        setUserAction('avoided');
-    }
+    const { data: dis } = await supabase.from('dislikes').select('id').eq('place_id', id).eq('user_id', user.id).single();
+    if (dis) { setUserAction('avoided'); }
   }, [id, supabase]);
 
   // --- LOGIC: Handle Save/Avoid Toggle ---
@@ -96,10 +83,7 @@ export default function RestaurantDetailsPage() {
     setActionLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) {
-        router.push('/login'); // Redirect if not logged in
-        return;
-    }
+    if (!user) { router.push('/login'); return; }
 
     try {
         if (action === 'save') {
@@ -107,9 +91,7 @@ export default function RestaurantDetailsPage() {
                 await supabase.from('favorites').delete().eq('place_id', id).eq('user_id', user.id);
                 setUserAction('none');
             } else {
-                if (userAction === 'avoided') {
-                    await supabase.from('dislikes').delete().eq('place_id', id).eq('user_id', user.id);
-                }
+                if (userAction === 'avoided') await supabase.from('dislikes').delete().eq('place_id', id).eq('user_id', user.id);
                 await supabase.from('favorites').insert({ place_id: id, user_id: user.id });
                 setUserAction('saved');
             }
@@ -118,9 +100,7 @@ export default function RestaurantDetailsPage() {
                 await supabase.from('dislikes').delete().eq('place_id', id).eq('user_id', user.id);
                 setUserAction('none');
             } else {
-                if (userAction === 'saved') {
-                    await supabase.from('favorites').delete().eq('place_id', id).eq('user_id', user.id);
-                }
+                if (userAction === 'saved') await supabase.from('favorites').delete().eq('place_id', id).eq('user_id', user.id);
                 await supabase.from('dislikes').insert({ place_id: id, user_id: user.id });
                 setUserAction('avoided');
             }
@@ -134,79 +114,63 @@ export default function RestaurantDetailsPage() {
 
   const handleAiFeedback = async (isHelpful: boolean) => {
     if (feedbackStatus !== "none" || !place) return; 
-
     setFeedbackStatus(isHelpful ? "helpful" : "unhelpful");
-
     try {
         const { data: { user } } = await supabase.auth.getUser();
-        await supabase.from("ai_feedback").insert({
-            place_id: place.place_id,
-            user_id: user?.id || null, 
-            is_helpful: isHelpful
-        });
-    } catch (err) {
-        console.error("Feedback error:", err);
-    }
+        await supabase.from("ai_feedback").insert({ place_id: place.place_id, user_id: user?.id || null, is_helpful: isHelpful });
+    } catch (err) { console.error("Feedback error:", err); }
   };
 
   const fetchData = useCallback(async () => {
     if (!id) return;
-    
-    // Get current user for review matching
     const { data: { user } } = await supabase.auth.getUser();
 
-    // A. Fetch Community Reviews FIRST (so we can use them in scoring)
+    // A. Fetch Community Reviews (UPDATED QUERY)
+    // We now select profiles(dietary_preference) to get the user sensitivity
     const { data: userReviews } = await supabase
       .from("user_reviews")
-      .select("*")
+      .select("*, profiles(dietary_preference)") // <--- JOIN ADDED HERE
       .eq("place_id", id)
       .order("created_at", { ascending: false });
     
-    const safeUserReviews = userReviews || [];
+    const safeUserReviews: CommunityReview[] = userReviews || [];
     setCommunityReviews(safeUserReviews);
 
-    // Identify if current user has reviewed
+    // B. Aggregate Photos
+    const photos = safeUserReviews
+        .flatMap(r => r.image_urls || [])
+        .filter(url => url && url.length > 0);
+    setAllPhotos(photos);
+
     if (user && safeUserReviews.length > 0) {
-        const myReview = safeUserReviews.find((r: CommunityReview) => r.user_id === user.id);
+        const myReview = safeUserReviews.find((r) => r.user_id === user.id);
         setCurrentUserReview(myReview || null);
     }
 
-    // B. Fetch Restaurant Data
-    const { data: restaurantData } = await supabase
-      .from("restaurants")
-      .select("*")
-      .eq("place_id", id)
-      .single();
+    // C. Fetch Restaurant Data
+    const { data: restaurantData } = await supabase.from("restaurants").select("*").eq("place_id", id).single();
 
     if (restaurantData) {
       setPlace(restaurantData);
-      
-      // STRICT LOGIC: Only use average_safety_rating. If it's missing or 0, pass 0.
       const safetyRating = restaurantData.average_safety_rating || 0;
-
       const score = restaurantData.wise_bites_score || calculateWiseBitesScore(
         restaurantData.ai_safety_score, 
         restaurantData.relevant_count, 
-        safetyRating, // STRICTLY passing Safety Rating
+        safetyRating, 
         safeUserReviews 
       );
       setCalculatedScore(score);
 
-      // Sort Google Reviews if they exist
       if (restaurantData.reviews && Array.isArray(restaurantData.reviews)) {
         const sorted = [...restaurantData.reviews].sort((a, b) => getDaysAgo(a.date) - getDaysAgo(b.date));
         setSortedGoogleReviews(sorted);
       }
     }
-
     setLoading(false);
   }, [id, supabase]);
 
-  // NEW: Handle Review Submit -> Force AI Refresh
   const handleReviewSubmitted = async () => {
-    setLoading(true); // Show loading state while AI thinks
-    
-    // 1. Force the AI to re-analyze immediately via API
+    setLoading(true);
     try {
         if (place) {
             await fetch("/api/reviews", {
@@ -218,22 +182,17 @@ export default function RestaurantDetailsPage() {
                     address: place.address,
                     city: place.city,
                     rating: place.rating,
-                    force_refresh: true // <--- Point #6: Force refresh
+                    force_refresh: true 
                 })
             });
         }
-    } catch (e) {
-        console.error("Failed to refresh AI analysis", e);
-    }
-
-    // 2. Re-fetch data from DB to show new score/reviews
+    } catch (e) { console.error("Failed to refresh AI analysis", e); }
     await fetchData();
   };
 
-  // TRIGGER: This runs once when the page loads (or when ID changes)
   useEffect(() => {
     fetchData();
-    checkUserStatus(); // Don't forget this if you're using the favorites/save logic
+    checkUserStatus(); 
   }, [fetchData, checkUserStatus]);
 
   // --- HELPERS ---
@@ -251,7 +210,6 @@ export default function RestaurantDetailsPage() {
     return val * multiplier;
   };
 
-  // UPDATED FRONTEND SCORING LOGIC (Matching Strict Python Rule)
   const calculateWiseBitesScore = (
     aiScore: number | null | undefined, 
     revCount: number | null | undefined, 
@@ -259,47 +217,29 @@ export default function RestaurantDetailsPage() {
     communityReviews: CommunityReview[]
   ) => {
     if (!aiScore) return null;
-    
-    // RULE 1: STRICT NULL CHECK
-    // If no community reviews AND no relevant google reviews, return null.
-    if (communityReviews.length === 0 && (!revCount || revCount === 0)) {
-        return null;
-    }
+    if (communityReviews.length === 0 && (!revCount || revCount === 0)) return null;
     
     let finalScore = 0;
     
-    // MODE A: Community Data Exists
     if (communityReviews.length > 0) {
         const totalStars = communityReviews.reduce((acc, r) => acc + r.rating, 0);
         const avgCommunityRating = totalStars / communityReviews.length;
         const unsafeReports = communityReviews.filter(r => !r.did_feel_safe).length;
         const safeReports = communityReviews.filter(r => r.did_feel_safe).length;
 
-        // 70% AI + 30% Community
         let total = aiScore * 7.0;
         total += (avgCommunityRating * 2.0) * 3.0; 
         total -= (unsafeReports * 15.0);
         total += (safeReports * 2.0);
-        
         finalScore = total / 10.0;
-    } 
-    // MODE B: Cold Start (Relevant Google Data ONLY)
-    else {
+    } else {
         const rating = safetyRating || 0; 
         const count = revCount || 0;
-        
         let total = aiScore * 8.0;
-
-        if (count > 3) {
-            total += (rating * 4.0);
-        } else {
-            // New/Low Volume: + Rating * 2 
-            total += (rating * 2.0);
-        } 
-        
+        if (count > 3) total += (rating * 4.0);
+        else total += (rating * 2.0);
         finalScore = total / 10.0;
     }
-
     return Math.max(1.0, Math.min(10.0, parseFloat(finalScore.toFixed(1))));
   };
 
@@ -310,21 +250,27 @@ export default function RestaurantDetailsPage() {
     return "text-rose-600 bg-rose-50 border-rose-200";
   };
 
+  const getSensitivityLabel = (val?: string) => {
+      if (!val) return null;
+      switch(val) {
+          case 'symptomatic_celiac': return 'Symptomatic Celiac';
+          case 'asymptomatic_celiac': return 'Asymptomatic Celiac';
+          case 'gluten_intolerant': return 'Gluten Intolerant';
+          case 'wheat_allergy': return 'Wheat Allergy';
+          default: return null;
+      }
+  };
+
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-slate-300" /></div>;
   if (!place) return null;
 
   const totalReviews = (place.relevant_count || 0) + communityReviews.length;
-  const latestDate = communityReviews.length > 0 
-    ? new Date(communityReviews[0].created_at).toLocaleDateString() 
-    : (sortedGoogleReviews.length > 0 ? sortedGoogleReviews[0].date : "N/A");
+  const latestDate = communityReviews.length > 0 ? new Date(communityReviews[0].created_at).toLocaleDateString() : (sortedGoogleReviews.length > 0 ? sortedGoogleReviews[0].date : "N/A");
 
   return (
     <div className="min-h-screen bg-white">
-
       <main className="max-w-4xl mx-auto px-4 py-8">
         
-        {/* REMOVED: Back to Search Button */}
-
         {/* HEADER */}
         <div className="border-b border-slate-100 pb-8 mb-8">
             <h1 className="text-3xl md:text-4xl font-black text-slate-900 mb-2">{place.name}</h1>
@@ -333,72 +279,34 @@ export default function RestaurantDetailsPage() {
                 <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-500 fill-amber-500" /> {place.rating} Stars on Google</span>
             </div>
 
-            {/* Collapsible Hours Section */}
+            {/* Collapsible Hours */}
             <div className="flex items-start gap-3 text-slate-600 mb-6">
               <Clock className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="flex flex-col">
-                 <button 
-                    onClick={() => setShowHours(!showHours)}
-                    className="flex items-center gap-2 font-medium text-slate-900 hover:text-green-600 transition-colors"
-                 >
-                    Opening Hours
-                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showHours ? "rotate-180" : ""}`} />
+                 <button onClick={() => setShowHours(!showHours)} className="flex items-center gap-2 font-medium text-slate-900 hover:text-green-600 transition-colors">
+                    Opening Hours <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showHours ? "rotate-180" : ""}`} />
                  </button>
-                 
-                 {/* The Dropdown Content */}
                  {showHours && (
                      <div className="mt-2 pl-2 border-l-2 border-slate-100 animate-in slide-in-from-top-2 fade-in duration-200">
                         {place.hours_schedule && place.hours_schedule.length > 0 ? (
-                            <ul className="text-sm space-y-1.5 text-slate-500">
-                                {place.hours_schedule.map((day, i) => (
-                                    <li key={i}>{day}</li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <span className="text-sm text-slate-400">Hours not available</span>
-                        )}
+                            <ul className="text-sm space-y-1.5 text-slate-500">{place.hours_schedule.map((day, i) => (<li key={i}>{day}</li>))}</ul>
+                        ) : (<span className="text-sm text-slate-400">Hours not available</span>)}
                      </div>
                  )}
               </div>
             </div>
             
             <div className="flex flex-col sm:flex-row gap-4 mt-6">
-                {/* SAVE / AVOID BUTTONS */}
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => handleToggleAction('save')}
-                        disabled={actionLoading}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${
-                            userAction === 'saved'
-                            ? "bg-green-100 text-green-700 border border-green-200"
-                            : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"
-                        }`}
-                    >
-                        <Heart className={`w-4 h-4 ${userAction === 'saved' ? "fill-current" : ""}`} />
-                        {userAction === 'saved' ? "Saved to Profile" : "Save to Profile"}
+                    <button onClick={() => handleToggleAction('save')} disabled={actionLoading} className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${userAction === 'saved' ? "bg-green-100 text-green-700 border border-green-200" : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"}`}>
+                        <Heart className={`w-4 h-4 ${userAction === 'saved' ? "fill-current" : ""}`} /> {userAction === 'saved' ? "Saved to Profile" : "Save to Profile"}
                     </button>
-
-                    <button
-                        onClick={() => handleToggleAction('avoid')}
-                        disabled={actionLoading}
-                        className={`p-2 rounded-full border transition-all ${
-                            userAction === 'avoided'
-                            ? "bg-red-50 text-red-600 border-red-200"
-                            : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200"
-                        }`}
-                        title="Add to avoid list"
-                    >
+                    <button onClick={() => handleToggleAction('avoid')} disabled={actionLoading} className={`p-2 rounded-full border transition-all ${userAction === 'avoided' ? "bg-red-50 text-red-600 border-red-200" : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200"}`} title="Add to avoid list">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
-
                 <div className="hidden sm:block w-px h-8 bg-slate-200 self-center mx-2" />
-
-                <a 
-                    href={`http://googleusercontent.com/maps.google.com/?q=${encodeURIComponent(place.name + " " + place.address)}&query_place_id=${place.place_id}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors"
-                >
+                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}&query_place_id=${place.place_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors">
                     View on Google Maps <ExternalLink className="w-3 h-3" />
                 </a>
             </div>
@@ -423,30 +331,15 @@ export default function RestaurantDetailsPage() {
 
             <div className="md:col-span-2 p-6 rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col">
                 <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    AI Safety Summary
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> AI Safety Summary
                 </h3>
-                <p className="text-slate-600 leading-relaxed flex-grow">
-                    {place.ai_summary || "No detailed analysis available yet."}
-                </p>
-
+                <p className="text-slate-600 leading-relaxed flex-grow">{place.ai_summary || "No detailed analysis available yet."}</p>
                 <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
                     <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Was this summary helpful?</p>
-                    
                     {feedbackStatus === "none" ? (
                         <div className="flex items-center gap-2">
-                            <button 
-                                onClick={() => handleAiFeedback(true)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-all"
-                            >
-                                <ThumbsUp className="w-4 h-4" /> Yes
-                            </button>
-                            <button 
-                                onClick={() => handleAiFeedback(false)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-all"
-                            >
-                                <ThumbsDown className="w-4 h-4" /> No
-                            </button>
+                            <button onClick={() => handleAiFeedback(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-all"><ThumbsUp className="w-4 h-4" /> Yes</button>
+                            <button onClick={() => handleAiFeedback(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-all"><ThumbsDown className="w-4 h-4" /> No</button>
                         </div>
                     ) : (
                         <div className="text-sm font-medium text-slate-500 animate-in fade-in slide-in-from-bottom-1 duration-300">
@@ -457,67 +350,99 @@ export default function RestaurantDetailsPage() {
             </div>
         </div>
 
+        {/* --- NEW: USER PHOTOS GALLERY --- */}
+        <section className="mb-12">
+            <h2 className="text-2xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                User Photos
+                <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{allPhotos.length}</span>
+            </h2>
+            {allPhotos.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                    {allPhotos.map((url, i) => (
+                        <div key={i} className="aspect-square relative rounded-xl overflow-hidden border border-slate-100 bg-slate-50 group cursor-pointer">
+                            <img src={url} alt={`User photo ${i}`} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center flex flex-col items-center justify-center gap-2">
+                    <Camera className="w-8 h-8 text-slate-300" />
+                    <p className="text-slate-500 font-medium">No photos yet.</p>
+                    <p className="text-xs text-slate-400">Add a review to upload the first photo!</p>
+                </div>
+            )}
+        </section>
+
         {/* REVIEWS SECTION */}
         <div className="space-y-12">
             <section className="grid lg:grid-cols-12 gap-8">
                 <div className="lg:col-span-5">
                    <div className="sticky top-24">
-                      {/* PASSING EXISTING REVIEW:
-                         If you want to enable editing, update your ReviewForm component
-                         to accept 'existingReview' as a prop and use it to pre-fill the form.
-                      */}
-                      {/* @ts-ignore - Assuming you will update ReviewForm next */}
-                      <ReviewForm 
-                            placeId={place.place_id} 
-                            onReviewSubmitted={handleReviewSubmitted} 
-                            existingReview={currentUserReview} 
-                        />
+                      {/* @ts-ignore */}
+                      <ReviewForm placeId={place.place_id} onReviewSubmitted={handleReviewSubmitted} existingReview={currentUserReview} />
                    </div>
                 </div>
                 <div className="lg:col-span-7 space-y-6">
                     <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                        Community Reviews
-                        <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{communityReviews.length}</span>
+                        Community Reviews <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{communityReviews.length}</span>
                     </h2>
                     {communityReviews.length === 0 ? (
                         <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500"><p>Be the first to review this spot!</p></div>
                     ) : (
-                        communityReviews.map((review) => (
-                            <div key={review.id} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="flex justify-between items-start mb-3">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"><User className="w-4 h-4 text-slate-400" /></div>
-                                        <div>
-                                            <div className="text-sm font-bold text-slate-900">
-                                                {/* Show 'You' if it's the current user */}
-                                                {currentUserReview?.id === review.id ? "You" : "WiseBites Member"}
-                                            </div>
-                                            <div className="flex items-center gap-2 mt-0.5">
-                                                <div className="flex text-amber-400">
-                                                    {[...Array(review.rating)].map((_, i) => (<Star key={i} className="w-3 h-3 fill-current" />))}
+                        communityReviews.map((review) => {
+                            // Sensitivity Label
+                            const sensitivityLabel = getSensitivityLabel(review.profiles?.dietary_preference);
+
+                            return (
+                                <div key={review.id} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200"><User className="w-5 h-5 text-slate-400" /></div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-bold text-slate-900">{currentUserReview?.id === review.id ? "You" : "WiseBites Member"}</span>
+                                                    {/* NEW: Sensitivity Badge */}
+                                                    {sensitivityLabel && (
+                                                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
+                                                            {sensitivityLabel}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                <span className="text-xs text-slate-400 font-medium">• {new Date(review.created_at).toLocaleDateString()}</span>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <div className="flex text-amber-400">{[...Array(review.rating)].map((_, i) => (<Star key={i} className="w-3 h-3 fill-current" />))}</div>
+                                                    <span className="text-xs text-slate-400 font-medium">• {new Date(review.created_at).toLocaleDateString()}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Badges */}
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                        <Badge label="Dedicated GF" active={review.is_dedicated_gluten_free} />
+                                        <Badge label="GF Menu" active={review.has_gf_menu} />
+                                        <Badge label="Staff Knowledge" active={review.staff_knowledgeable} />
+                                        <Badge label="Dedicated Fryer" active={review.has_dedicated_fryer} />
+                                        <Badge label="Felt Safe" active={review.did_feel_safe} />
+                                    </div>
+                                    
+                                    {/* Comment */}
+                                    {review.comment && (<p className="text-slate-700 text-sm leading-relaxed bg-slate-50 p-3 rounded-lg mb-4">"{review.comment}"</p>)}
+
+                                    {/* NEW: Review Specific Images */}
+                                    {review.image_urls && review.image_urls.length > 0 && (
+                                        <div className="flex gap-2 overflow-x-auto pb-2">
+                                            {review.image_urls.map((url, imgIdx) => (
+                                                <div key={imgIdx} className="w-20 h-20 shrink-0 relative rounded-lg overflow-hidden border border-slate-100 bg-slate-50">
+                                                    <img src={url} alt="Review attachment" className="w-full h-full object-cover" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                    <Badge label="Dedicated GF" active={review.is_dedicated_gluten_free} />
-                                    <Badge label="GF Menu" active={review.has_gf_menu} />
-                                    <Badge label="Staff Knowledge" active={review.staff_knowledgeable} />
-                                    <Badge label="Dedicated Fryer" active={review.has_dedicated_fryer} />
-                                    <Badge label="Felt Safe" active={review.did_feel_safe} />
-                                </div>
-                                {review.comment && (<p className="text-slate-700 text-sm leading-relaxed bg-slate-50 p-3 rounded-lg">"{review.comment}"</p>)}
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
-            </section>
-
-             <section>
-                <h2 className="text-2xl font-bold text-slate-900 mb-4">Gluten-Free Menu</h2>
-                <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500"><p>No menus uploaded yet.</p></div>
             </section>
 
             {sortedGoogleReviews.length > 0 && (

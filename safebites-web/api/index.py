@@ -335,6 +335,7 @@ def search_restaurants(search: SearchRequest):
         google_count = db_r.get('relevant_count', 0) or 0
         wb_count = db_r.get('community_review_count', 0) or 0 # <--- NEW
         total_count = google_count + wb_count
+        db_hours = db_r.get('hours_schedule', [])
 
         is_dedicated = db_r.get('is_dedicated_gluten_free', False)
         
@@ -348,6 +349,7 @@ def search_restaurants(search: SearchRequest):
             entry["average_safety_rating"] = float(db_r['average_safety_rating']) if db_r['average_safety_rating'] else None
             entry["is_cached"] = True
             entry["is_dedicated_gluten_free"] = is_dedicated
+            entry["hours_schedule"] = db_hours if db_hours else entry["hours_schedule"]
             entry["source"] = "Hybrid (Merged)"
         else:
             # Add new entry strictly from DB
@@ -370,6 +372,7 @@ def search_restaurants(search: SearchRequest):
                 "wise_bites_score": float(db_r['wise_bites_score']) if db_r['wise_bites_score'] else None,
                 "relevant_count": total_count,
                 "is_dedicated_gluten_free": is_dedicated,
+                "hours_schedule": db_hours,
                 "is_cached": True,
                 "source": "Supabase"
             }
@@ -427,8 +430,11 @@ def search_restaurants(search: SearchRequest):
                     db_missing_types = not cached.get("google_types")
                     db_missing_price = not cached.get("price_level")
                     db_missing_loc = (cached.get("lat") is None or cached.get("lng") is None)
+                    db_missing_hours = not cached.get("hours_schedule")
+                    current_rating = cached.get("rating")
+                    db_missing_rating = (current_rating is None or float(current_rating) == 0)
                     
-                    if (db_missing_types or db_missing_price or db_missing_loc):
+                    if (db_missing_types or db_missing_price or db_missing_loc or db_missing_hours or db_missing_rating):
                         try:
                             update_payload = {}
                             
@@ -442,7 +448,13 @@ def search_restaurants(search: SearchRequest):
                             if r.get("location"):
                                 update_payload["lat"] = r["location"]["lat"]
                                 update_payload["lng"] = r["location"]["lng"]
-                            
+
+                            if r.get("hours_schedule"): 
+                                update_payload["hours_schedule"] = r["hours_schedule"]
+
+                            if r.get("rating") and db_missing_rating:
+                                update_payload["rating"] = r["rating"]
+
                             # If we have something to save, run the update
                             if update_payload:
                                 supabase.table("restaurants") \

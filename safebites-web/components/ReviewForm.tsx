@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "../utils/supabase/client";
-import { Star, Check, AlertCircle, Loader2 } from "lucide-react";
+import { Star, Check, AlertCircle, Loader2, Camera, X, Image as ImageIcon } from "lucide-react";
 
 interface ReviewFormProps {
   placeId: string;
@@ -16,12 +16,14 @@ interface ReviewFormProps {
     did_feel_safe: boolean;
     has_dedicated_fryer: boolean;
     is_dedicated_gluten_free: boolean;
+    image_urls?: string[];
   } | null;
 }
 
 export default function ReviewForm({ placeId, onReviewSubmitted, existingReview }: ReviewFormProps) {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Form State
@@ -35,11 +37,23 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
     is_dedicated_gluten_free: false,
   });
 
+  // Image State
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  // Store existing images separately so we don't re-upload them
+  const [existingImages, setExistingImages] = useState<string[]>([]);
+
   // --- EFFECT: Pre-fill form if editing ---
   useEffect(() => {
     if (existingReview) {
       setRating(existingReview.rating);
       setComment(existingReview.comment || "");
+      
+      // FIX 1: Load existing images into state
+      if (existingReview.image_urls && existingReview.image_urls.length > 0) {
+        setExistingImages(existingReview.image_urls);
+      }
+
       setTags({
         has_gf_menu: existingReview.has_gf_menu,
         staff_knowledgeable: existingReview.staff_knowledgeable,
@@ -49,6 +63,64 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
       });
     }
   }, [existingReview]);
+
+  // --- IMAGE HANDLERS ---
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const newFiles = Array.from(e.target.files);
+      
+      // Validate Size (5MB)
+      const validFiles = newFiles.filter(file => {
+          if (file.size > 5 * 1024 * 1024) {
+              alert(`"${file.name}" is too large (max 5MB).`);
+              return false;
+          }
+          return true;
+      });
+
+      setSelectedFiles(prev => [...prev, ...validFiles]);
+
+      // Create Previews
+      const newPreviews = validFiles.map(file => URL.createObjectURL(file));
+      setPreviewUrls(prev => [...prev, ...newPreviews]);
+    }
+  };
+
+  const removeNewImage = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removeExistingImage = (index: number) => {
+    setExistingImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadImages = async (userId: string) => {
+      const uploadedUrls: string[] = [];
+
+      for (const file of selectedFiles) {
+          const fileExt = file.name.split('.').pop();
+          // Create a clean path: userId/timestamp-random.ext
+          const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+          const { error: uploadError } = await supabase.storage
+              .from('review-images')
+              .upload(fileName, file);
+
+          if (uploadError) {
+              console.error('Upload failed:', uploadError);
+              throw new Error("Failed to upload image. Please try again.");
+          }
+
+          // Get Public URL
+          const { data: { publicUrl } } = supabase.storage
+              .from('review-images')
+              .getPublicUrl(fileName);
+          
+          uploadedUrls.push(publicUrl);
+      }
+      return uploadedUrls;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,11 +141,30 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
         return;
       }
 
+      // 1. Upload New Images (if any)
+      let newImageUrls: string[] = [];
+      if (selectedFiles.length > 0) {
+        setUploading(true);
+        try {
+            newImageUrls = await uploadImages(user.id);
+        } catch (err) {
+            setLoading(false);
+            setUploading(false);
+            setMessage({ type: 'error', text: "Image upload failed. Please try smaller files." });
+            return;
+        }
+        setUploading(false);
+      }
+
+      // Combine existing images (that weren't deleted) with new uploads
+      const finalImageUrls = [...existingImages, ...newImageUrls];
+
       const reviewData = {
         place_id: placeId,
         user_id: user.id,
         rating,
         comment,
+        image_urls: finalImageUrls, // Save array of URLs
         ...tags,
       };
 
@@ -215,14 +306,71 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
           />
         </div>
 
+        {/* --- NEW: Photo Upload Section --- */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Add Photos</label>
+          
+          <div className="grid grid-cols-4 gap-3">
+            {/* 1. Show Existing Images (Editable) */}
+            {existingImages.map((url, idx) => (
+                <div key={`exist-${idx}`} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
+                    <img src={url} alt="Existing" className="w-full h-full object-cover" />
+                    <button
+                        type="button"
+                        onClick={() => removeExistingImage(idx)}
+                        className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove image"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                </div>
+            ))}
+
+            {/* 2. Show New Previews */}
+            {previewUrls.map((url, idx) => (
+                <div key={`new-${idx}`} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
+                    <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                    <button
+                        type="button"
+                        onClick={() => removeNewImage(idx)}
+                        className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove image"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                </div>
+            ))}
+
+            {/* 3. Upload Button */}
+            <label className="flex flex-col items-center justify-center aspect-square rounded-lg border-2 border-dashed border-slate-200 hover:border-green-400 hover:bg-green-50 cursor-pointer transition-all bg-slate-50">
+                <input 
+                    type="file" 
+                    accept="image/*" 
+                    multiple 
+                    onChange={handleFileSelect}
+                    className="hidden" 
+                />
+                <Camera className="w-6 h-6 text-slate-400 mb-1" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Add</span>
+            </label>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2">Max 5MB per image. Formats: JPG, PNG, WEBP.</p>
+        </div>
+
         {/* Submit Button */}
         <button
           type="submit"
           disabled={loading}
           className="w-full bg-slate-900 text-white font-medium py-3 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
         >
-          {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-          {existingReview ? "Update Review" : "Submit Review"}
+          {loading ? (
+            <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {uploading ? "Uploading Photos..." : "Submitting..."}
+            </>
+          ) : (
+            existingReview ? "Update Review" : "Submit Review"
+          )}
         </button>
       </form>
     </div>
