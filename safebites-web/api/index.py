@@ -102,17 +102,37 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         reverse=True
     )
 
-    # 3. Increase the limit to 40-50 (Llama 3.3 can easily handle this)
+    # 3. Format text WITH User Context
+    formatted_lines = []
+    for r in sorted_reviews[:50]:
+        source_label = r.get("source", "Google")
+        sensitivity = r.get("user_sensitivity")
+        
+        # If it's our user, tag their sensitivity!
+        if sensitivity:
+            # Clean up the string (e.g. "symptomatic_celiac" -> "Symptomatic Celiac")
+            readable_sens = sensitivity.replace("_", " ").title()
+            prefix = f"[WiseBites {readable_sens} Member]"
+        elif source_label == "WiseBites Community":
+            prefix = "[WiseBites Member]"
+        else:
+            prefix = "[Google User]"
+            
+        formatted_lines.append(f"{prefix}: {r.get('text', '')}")
+
+    # Increase the limit to 40-50 (Llama 3.3 can easily handle this)
     # We slice the SORTED list now.
     reviews_text = "\n".join([f"- {r.get('text', '')}" for r in sorted_reviews[:50]]) 
     
     system_prompt = (
         "You are an expert dietician specializing in Celiac Disease and gluten safety. "
         "Analyze the following restaurant reviews and determine if this place is safe for someone with Celiac Disease. "
-        "IMPORTANT: Reviews labeled '[WiseBites Community]' are from verified Celiac users of our app. "
-        "Treat these community reviews as the highest source of truth. "
-        "If a community member says they got sick, take it very seriously. "
-        "Focus on keywords like 'cross-contamination', 'dedicated fryer', 'separate prep area', and 'got sick'. "
+        "IMPORTANT: Reviews that begin with \"[WiseBites\" are from users of our app. "
+        "Each review is prefixed with the user's status (e.g., [WiseBites Symptomatic Celiac Member], [Google User]). "
+        "\n\nRULES:"
+        "\n1. Treat these community reviews from WiseBites Members, particularly Symptomatic Celiac Members, as the highest source of truth. "
+        "\n2. If a WiseBites Member says they got sick, take it very seriously. "
+        "\n3. Focus on keywords like 'cross-contamination', 'dedicated fryer', 'separate prep area', and 'got sick'. "
         "Return a JSON object with exactly two keys: "
         "'score' (an integer 1-10, where 10 is perfectly safe and 1 is dangerous) and "
         "'summary' (a concise 2-sentence explanation of the rating, referencing community feedback if present)."

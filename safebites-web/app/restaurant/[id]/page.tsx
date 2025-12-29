@@ -7,7 +7,7 @@ import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
   Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
-  Heart, X, Clock, ChevronDown, Camera, AlertTriangle
+  Heart, X, Clock, ChevronDown, Camera, AlertTriangle, Share2
 } from "lucide-react";
 import Image from "next/image"; // Optimization
 
@@ -109,6 +109,31 @@ export default function RestaurantDetailsPage() {
         console.error("Error toggling status:", error);
     } finally {
         setActionLoading(false);
+    }
+  };
+
+  // --- SHARE HANDLER ---
+  const handleShare = async () => {
+    if (!place) return;
+    
+    const shareData = {
+        title: `Is ${place.name} Celiac Safe?`,
+        text: `Check out the gluten-free safety rating for ${place.name} on WiseBites.`,
+        url: window.location.href
+    };
+
+    try {
+        if (navigator.share) {
+            await navigator.share(shareData);
+        } else {
+            await navigator.clipboard.writeText(window.location.href);
+            alert("Link copied to clipboard!");
+        }
+    } catch (err: any) {
+        // FIX: Ignore the error if the user just cancelled the share sheet
+        if (err.name !== 'AbortError') {
+            console.error("Error sharing:", err);
+        }
     }
   };
 
@@ -306,6 +331,16 @@ export default function RestaurantDetailsPage() {
                     </button>
                 </div>
                 <div className="hidden sm:block w-px h-8 bg-slate-200 self-center mx-2" />
+                
+                {/* SHARE BUTTON */}
+                <button 
+                    onClick={handleShare}
+                    className="p-2 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all"
+                    title="Share this place"
+                >
+                    <Share2 className="w-5 h-5" />
+                </button>
+
                 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}&query_place_id=${place.place_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors">
                     View on Google Maps <ExternalLink className="w-3 h-3" />
                 </a>
