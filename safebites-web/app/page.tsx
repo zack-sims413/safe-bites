@@ -157,7 +157,7 @@ export default function Home() {
           
           {hasSearched && results.length === 0 && !loading && !error && (
             <div className="text-center py-20 opacity-50">
-              <p className="text-xl font-semibold">No WiseBiets found.</p>
+              <p className="text-xl font-semibold">No WiseBites found.</p>
               <p>Try expanding your search area.</p>
             </div>
           )}

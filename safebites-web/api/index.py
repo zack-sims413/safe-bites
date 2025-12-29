@@ -44,6 +44,8 @@ class ReviewRequest(BaseModel):
     hours_schedule: Optional[List[str]] = None
     # Flag to force AI re-analysis (e.g. after user review)
     force_refresh: Optional[bool] = False
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 # 3. Helper Functions
 
@@ -187,7 +189,7 @@ def fetch_google_search(query: str, location: str, lat: float = None, lng: float
         text_query = f"{query} gluten-free in {location}"
 
     url = "https://places.googleapis.com/v1/places:searchText"
-    field_mask = "places.displayName,places.formattedAddress,places.rating,places.id,places.location,places.regularOpeningHours,places.businessStatus"
+    field_mask = "places.displayName,places.formattedAddress,places.rating,places.id,places.location,places.regularOpeningHours,places.businessStatus,places.types,places.priceLevel"
     headers = {"Content-Type": "application/json", "X-Goog-Api-Key": GOOGLE_KEY, "X-Goog-FieldMask": field_mask}
     
     payload = {
@@ -200,7 +202,7 @@ def fetch_google_search(query: str, location: str, lat: float = None, lng: float
         payload["locationBias"] = {
             "circle": {
                 "center": {"latitude": lat, "longitude": lng},
-                "radius": 40000.0
+                "radius": 30000.0
             }
         }
 
@@ -257,112 +259,206 @@ def search_restaurants(search: SearchRequest):
     if not search_location and not (user_lat and user_lon):
          raise HTTPException(status_code=400, detail="Must provide location or address")
 
+    # A. Fetch from Google Places API
     google_data = fetch_google_search(search.query, search_location, user_lat, user_lon)
     
-    raw_results = []
-    place_ids = []
+    # B. Fetch from Supabase (Existing "Hidden Gems" or Safe Spots)
+    # We call the RPC function we just created
+    db_results = []
+    if user_lat and user_lon:
+        try:
+            print("Calling Supabase RPC for nearby restaurants...")
+            rpc_params = {
+                "user_lat": user_lat,
+                "user_lon": user_lon,
+                "search_query": search.query,
+                "radius_miles": 30.0 # Match your distance cap
+            }
+            db_resp = supabase.rpc("search_nearby_restaurants", rpc_params).execute()
+            if db_resp.data:
+                db_results = db_resp.data
+            print(f"Supabase returned {len(db_results)} results.")
+        except Exception as e:
+            print(f"DB Search Error: {e}")
 
+    # --- 2. MERGE RESULTS ---
+    combined_results = {} # Use a dict keyed by place_id to deduplicate
+
+    # Process Google Results First
     if "places" in google_data:
         for place in google_data["places"]:
             pid = place.get("id")
-
+            if not pid: continue
+            
             lat = place.get("location", {}).get("latitude")
             lng = place.get("location", {}).get("longitude")
             dist = calculate_distance(user_lat, user_lon, lat, lng) if user_lat else None
-
-            if dist is not None and dist > 30.0:
-                continue  # Skip places beyond 30 miles
-
-            if pid: place_ids.append(pid)
             
+            # Distance Cap
+            if dist is not None and dist > 30.0: continue
+
             address_str = place.get("formattedAddress", "")
-            city_extracted = None
-            if address_str:
-                parts = address_str.split(",")
-                if len(parts) >= 2:
-                    city_extracted = parts[-3].strip() if len(parts) > 3 else parts[1].strip()
-
             raw_hours = place.get("regularOpeningHours", {}).get("weekdayDescriptions", [])
-            cleaned_hours = [
-                h.replace('\u2009', ' ').replace('\u202f', ' ').strip() 
-                for h in raw_hours
-            ]
+            cleaned_hours = [h.replace('\u2009', ' ').strip() for h in raw_hours]
 
-            raw_results.append({
+            # Save the new metadata to result (and eventually DB)
+            google_types = place.get("types", [])
+            price_level = place.get("priceLevel", None)
+
+            combined_results[pid] = {
                 "name": place.get("displayName", {}).get("text", "Unknown"),
                 "address": address_str,
-                "city": city_extracted,
+                "city": extract_city(address_str),
                 "rating": place.get("rating", 0.0), 
                 "place_id": pid,
                 "location": {"lat": lat, "lng": lng},
                 "distance_miles": round(dist, 2) if dist else None,
                 "hours_schedule": cleaned_hours,
-                "ai_safety_score": None,
-                "ai_summary": None,
+                "google_types": google_types,   # <--- NEW
+                "price_level": price_level,     # <--- NEW
+                "ai_safety_score": None, 
+                "wise_bites_score": None,
                 "relevant_count": 0,
                 "is_cached": False,
-                "wise_bites_score": None
-            })
+                "source": "Google"
+            }
 
-    if place_ids:
+    # Process DB Results (Merge into Google Results)
+    # If a DB result exists, it OVERWRITES the Google result (because DB has the score!)
+    for db_r in db_results:
+        pid = db_r['place_id']
+        
+        # If it's already in the list from Google, we just update the score fields
+        # If it wasn't returned by Google (but is in our DB), we ADD it.
+        
+        if pid in combined_results:
+            # Update existing entry with DB scores
+            entry = combined_results[pid]
+            entry["wise_bites_score"] = float(db_r['wise_bites_score']) if db_r['wise_bites_score'] else None
+            entry["ai_safety_score"] = float(db_r['ai_safety_score']) if db_r['ai_safety_score'] else None
+            entry["ai_summary"] = db_r['ai_summary']
+            entry["relevant_count"] = db_r['relevant_count']
+            entry["average_safety_rating"] = float(db_r['average_safety_rating']) if db_r['average_safety_rating'] else None
+            entry["is_cached"] = True
+            entry["source"] = "Hybrid (Merged)"
+        else:
+            # Add new entry strictly from DB
+            combined_results[pid] = {
+                "name": db_r['name'],
+                "address": db_r['address'],
+                "city": extract_city(db_r['address']),
+                "rating": float(db_r['rating']), 
+                "place_id": pid,
+                # Note: DB RPC doesn't return lat/lng/hours in the simplified query above
+                # You might need to select them in the RPC if you want them here.
+                # For now, we assume basic display data is enough or we fetch details later.
+                "location": {"lat": 0, "lng": 0}, # Placeholder if not selected
+                "distance_miles": round(db_r['dist_miles'], 2),
+                "hours_schedule": [],
+                "google_types": db_r['google_types'],
+                "price_level": None,
+                "ai_safety_score": float(db_r['ai_safety_score']) if db_r['ai_safety_score'] else None,
+                "ai_summary": db_r['ai_summary'],
+                "wise_bites_score": float(db_r['wise_bites_score']) if db_r['wise_bites_score'] else None,
+                "relevant_count": db_r['relevant_count'],
+                "is_cached": True,
+                "source": "Supabase"
+            }
+
+    # Convert back to list
+    final_list = list(combined_results.values())
+
+    # --- 3. FETCH SCORES FOR NEW GOOGLE RESULTS ---
+    # (Existing logic to batch fetch scores for items that came ONLY from Google)
+    # We filter for items where 'is_cached' is False
+    uncached_ids = [r['place_id'] for r in final_list if not r['is_cached']]
+    
+    if uncached_ids:
         try:
-            response = supabase.table("restaurants").select("*").in_("place_id", place_ids).execute()
+            response = supabase.table("restaurants").select("*").in_("place_id", uncached_ids).execute()
             cache_map = {row['place_id']: row for row in response.data}
 
-            for r in raw_results:
-                if r['place_id'] in cache_map:
+            for r in final_list:
+                if r['place_id'] in cache_map and not r['is_cached']:
                     cached = cache_map[r['place_id']]
+                    
+                    # ... (Standard freshness logic & score hydration) ...
                     last_updated_str = cached.get("last_updated")
                     is_fresh = False
-                    
                     if last_updated_str:
                         last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
                         if datetime.now(timezone.utc) - last_updated < timedelta(days=30):
                             is_fresh = True
                     
-                    # 1. ALWAYS grab the DB Score if it exists (Source of Truth)
                     db_score = cached.get("wise_bites_score")
                     if db_score and float(db_score) > 0:
                         r["wise_bites_score"] = float(db_score)
                     
-                    # 2. Populate AI data only if fresh
                     if is_fresh:
                         r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
                         r["ai_summary"] = cached.get("ai_summary")
-                        
-                        # Grab Average Safety Rating
                         safety_rating = float(cached.get("average_safety_rating") or 0)
-                        
                         google_count = int(cached.get("relevant_count") or 0)
                         wb_count = int(cached.get("community_review_count") or 0)
                         r["relevant_count"] = google_count + wb_count
                         r["is_cached"] = True
                         
-                        # Only calculate manually if DB score was missing
                         if r["wise_bites_score"] is None or r["wise_bites_score"] == 0:
-                            # Pass 0 for safety_rating if google_count is 0 to ensure NULL return
-                            # WE DO NOT PASS r["rating"] (Generic) HERE ANYMORE
                             r["wise_bites_score"] = calculate_wisebites_score(
                                 r["ai_safety_score"],
                                 safety_rating, 
                                 google_count,
                                 0, 0, 0 
                             )
+
+                        # --- AUTO-UPDATE METADATA ---
+                    # Check if DB is missing data that Google just provided
+                    db_missing_types = not cached.get("google_types")
+                    db_missing_price = not cached.get("price_level")
+                    db_missing_loc = (cached.get("lat") is None or cached.get("lng") is None)
+                    
+                    if (db_missing_types or db_missing_price or db_missing_loc):
+                        try:
+                            update_payload = {}
+                            
+                            # Only update if Google actually gave us data
+                            if r.get("google_types"): 
+                                update_payload["google_types"] = r["google_types"]
+                            
+                            if r.get("price_level"): 
+                                update_payload["price_level"] = r["price_level"]
+                            
+                            if r.get("location"):
+                                update_payload["lat"] = r["location"]["lat"]
+                                update_payload["lng"] = r["location"]["lng"]
+                            
+                            # If we have something to save, run the update
+                            if update_payload:
+                                supabase.table("restaurants") \
+                                    .update(update_payload) \
+                                    .eq("place_id", r["place_id"]) \
+                                    .execute()
+                                    
+                        except Exception as e:
+                            # Non-critical: don't fail the search if this update fails
+                            print(f"Background metadata update failed for {r['place_id']}: {e}")
+                    # =======================================================
+                    
+                    
         except Exception as e:
             print(f"Batch Error: {e}")
 
-    # Sort
+    # Sort (WiseScore > Distance)
     def sort_key(x):
-        # Handle None scores by treating them as -1 so they go to bottom
         sb_score = x["wise_bites_score"] if x["wise_bites_score"] is not None else -1
         dist = x["distance_miles"] or 9999
         if sb_score > 0: return (0, -sb_score) 
         else: return (1, dist)
 
-    if user_lat: raw_results.sort(key=sort_key)
-    else: raw_results.sort(key=lambda x: x["rating"], reverse=True)
+    if user_lat: final_list.sort(key=sort_key)
+    else: final_list.sort(key=lambda x: x["rating"], reverse=True)
 
-    return {"results": raw_results}
+    return {"results": final_list}
 
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
@@ -477,6 +573,8 @@ def get_reviews(req: ReviewRequest):
             "address": req.address,
             "city": req.city or extract_city(req.address),
             "rating": req.rating,
+            "lat": req.lat,
+            "lng": req.lng,
             "hours_schedule": req.hours_schedule,
             "reviews": processed_reviews,
             "relevant_count": relevant_count,
