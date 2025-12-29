@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useState, useEffect, Suspense } from "react";
 import { User } from "@supabase/supabase-js";
 import { Search, MapPin, Loader2 } from "lucide-react";
-import RestaurantCard from "../components/RestaurantCard";
+import RestaurantCard from "../components/RestaurantCard"; 
 import { createClient } from "../utils/supabase/client";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface Restaurant {
   place_id: string;
@@ -24,17 +24,20 @@ interface Restaurant {
   is_dedicated_gluten_free?: boolean;
 }
 
-export default function Home() {
+function HomeContent() {
+  const supabase = createClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   // --- STATE ---
-  const [query, setQuery] = useState(""); 
-  const [location, setLocation] = useState(""); 
+  const [query, setQuery] = useState(searchParams.get("q") || ""); 
+  const [location, setLocation] = useState(searchParams.get("loc") || ""); 
+  
   const [results, setResults] = useState<Restaurant[]>([]); 
   const [loading, setLoading] = useState(false); 
   const [error, setError] = useState(""); 
   const [hasSearched, setHasSearched] = useState(false);
-  const [user, setUser] = useState<User | null>(null); // Track the user
-
-  const supabase = createClient();
+  const [user, setUser] = useState<User | null>(null);
 
   // --- AUTH CHECK ---
   useEffect(() => {
@@ -43,98 +46,123 @@ export default function Home() {
       setUser(user);
     };
     checkUser();
-  }, []);
+  }, [supabase]);
 
-  const handleSignOut = async () => {
-      await supabase.auth.signOut();
-      setUser(null);
-  };
-
-  // --- SEARCH HANDLER ---
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault(); 
+  // --- SEARCH FUNCTION ---
+  const performSearch = async (searchQuery: string, searchLoc: string) => {
+    if (!searchQuery && !searchLoc) return;
+    
     setLoading(true);
     setError("");
-    setResults([]); 
     setHasSearched(true);
+    setResults([]); 
 
     try {
-      const response = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: query,
-          location: location || "Atlanta, GA", 
-        }),
-      });
+        let lat = null;
+        let lng = null;
 
-      if (!response.ok) throw new Error("Failed to fetch results");
-      const data = await response.json();
-      setResults(data.results); 
+        const res = await fetch("/api/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                query: searchQuery, 
+                location: searchLoc, 
+                user_lat: lat,
+                user_lon: lng
+            }),
+        });
+
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        setResults(data.results || []);
+
     } catch (err) {
-      setError("Is the backend running?");
-      console.error(err);
+        console.error(err);
+        setError("Failed to fetch results. Please try again.");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
-  // --- RENDER ---
+  // --- URL SYNC EFFECT (FIXED) ---
+  useEffect(() => {
+    const urlQuery = searchParams.get("q");
+    const urlLoc = searchParams.get("loc");
+
+    if (urlQuery || urlLoc) {
+        // If params exist, sync inputs and Search
+        setQuery(urlQuery || "");
+        setLocation(urlLoc || "");
+        performSearch(urlQuery || "", urlLoc || "");
+    } else {
+        // FIX: If params are missing (Back button hit), RESET EVERYTHING
+        setResults([]);
+        setHasSearched(false);
+        setQuery("");
+        setLocation("");
+    }
+  }, [searchParams]);
+
+  // --- HANDLE FORM SUBMIT ---
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (location) params.set("loc", location);
+    router.push(`/?${params.toString()}`);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
+    <div className="min-h-screen bg-white">
       
-
       {/* HERO SECTION */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-3xl mx-auto px-6 py-12 md:py-16 text-center">
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-4">
-            Wise<span className="text-green-600">Bites</span> 🌾
-          </h1>
-          <p className="text-lg text-slate-500 max-w-lg mx-auto mb-8 leading-relaxed">
-            Find safer dining options with AI-powered reviews. We analyze thousands of reviews so you don't have to.
-          </p>
+      <div className="relative bg-slate-900 text-white pt-32 pb-24 px-6 rounded-b-[3rem] shadow-xl overflow-hidden">
+        {/* Background Effects */}
+        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1495147466023-ac5c588e2e94?q=80&w=2574&auto=format&fit=crop')] bg-cover bg-center opacity-20 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-900 pointer-events-none" />
+        
+        <div className="relative max-w-4xl mx-auto text-center space-y-6">
+           
+           <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-white mb-4">
+             Wise<span className="text-green-400">Bites</span> 🌾
+           </h1>
+           <p className="text-lg text-slate-300 max-w-lg mx-auto mb-8 leading-relaxed">
+             Find safer dining options with AI-powered reviews. We analyze thousands of reviews so you don't have to.
+           </p>
 
-          {/* SEARCH BAR */}
-          <form onSubmit={handleSearch} className="bg-white p-2 rounded-2xl shadow-xl border border-slate-100 flex flex-col md:flex-row gap-2 max-w-2xl mx-auto ring-1 ring-slate-100">
-            
-            {/* Input 1: Keyword */}
+           {/* SEARCH BAR */}
+           <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row gap-3 mt-10 p-2 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
             <div className="flex-1 relative group">
-              <Search className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-green-600 transition-colors" />
-              <input
-                type="text"
-                placeholder="Craving (e.g. Pizza, Tacos)"
-                className="w-full pl-12 pr-4 py-3 bg-transparent font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none"
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-green-400 transition-colors" />
+              <input 
+                type="text" 
+                placeholder="What are you craving? (e.g. Pizza, Thai)" 
+                className="w-full h-14 pl-12 pr-4 rounded-xl bg-slate-800/50 border border-transparent focus:border-green-500/50 focus:bg-slate-800 text-white placeholder:text-slate-500 outline-none transition-all"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-
-            <div className="hidden md:block w-px bg-slate-200 my-2"></div>
-
-            {/* Input 2: Location */}
             <div className="flex-1 relative group">
-              <MapPin className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-green-600 transition-colors" />
-              <input
-                type="text"
-                placeholder="Location (e.g. Atlanta)"
-                className="w-full pl-12 pr-4 py-3 bg-transparent font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none"
+              <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-green-400 transition-colors" />
+              <input 
+                type="text" 
+                placeholder="Location (e.g. Denver, CO)" 
+                className="w-full h-14 pl-12 pr-4 rounded-xl bg-slate-800/50 border border-transparent focus:border-green-500/50 focus:bg-slate-800 text-white placeholder:text-slate-500 outline-none transition-all"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
               />
             </div>
-
-            {/* Button */}
-            <button
+            <button 
               type="submit"
               disabled={loading}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg shadow-green-600/20 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[140px]"
+              className="bg-green-600 hover:bg-green-700 text-white font-bold h-14 px-8 rounded-xl transition-all shadow-lg shadow-green-600/20 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[140px]"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Search"}
             </button>
           </form>
 
           {error && (
-             <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 text-sm font-medium animate-fade-in">
+             <div className="mt-6 p-4 bg-red-500/20 text-red-200 rounded-xl border border-red-500/30 text-sm font-medium animate-fade-in">
                {error}
              </div>
           )}
@@ -151,7 +179,7 @@ export default function Home() {
             </div>
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-6 pb-20">
           {results.map((place) => (
             <RestaurantCard key={place.place_id} place={place} />
           ))}
@@ -165,5 +193,14 @@ export default function Home() {
         </div>
       </div>
     </div>
+  );
+}
+
+// WRAPPER (Required for useSearchParams in Next.js App Router)
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-slate-300" /></div>}>
+      <HomeContent />
+    </Suspense>
   );
 }
