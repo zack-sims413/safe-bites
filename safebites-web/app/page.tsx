@@ -21,6 +21,7 @@ interface Restaurant {
   relevant_count?: number;
   is_cached?: boolean;
   wise_bites_score?: number;
+  is_dedicated_gluten_free?: boolean;
 }
 
 export default function Home() {

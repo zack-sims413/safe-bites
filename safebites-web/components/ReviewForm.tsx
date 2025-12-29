@@ -15,6 +15,7 @@ interface ReviewFormProps {
     staff_knowledgeable: boolean;
     did_feel_safe: boolean;
     has_dedicated_fryer: boolean;
+    is_dedicated_gluten_free: boolean;
   } | null;
 }
 
@@ -31,6 +32,7 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
     staff_knowledgeable: false,
     did_feel_safe: false,
     has_dedicated_fryer: false,
+    is_dedicated_gluten_free: false,
   });
 
   // --- EFFECT: Pre-fill form if editing ---
@@ -43,6 +45,7 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
         staff_knowledgeable: existingReview.staff_knowledgeable,
         did_feel_safe: existingReview.did_feel_safe,
         has_dedicated_fryer: existingReview.has_dedicated_fryer,
+        is_dedicated_gluten_free: existingReview.is_dedicated_gluten_free || false,
       });
     }
   }, [existingReview]);
@@ -110,6 +113,7 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
                 staff_knowledgeable: false,
                 did_feel_safe: false,
                 has_dedicated_fryer: false,
+                is_dedicated_gluten_free: false,
             });
           }
           onReviewSubmitted();
@@ -170,6 +174,12 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
         <div className="space-y-3">
           <label className="block text-sm font-medium text-slate-700">Safety Checks</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* NEW: Dedicated GF Checkbox (Put this first!) */}
+            <TagCheckbox 
+              label="100% Dedicated Gluten Free?" 
+              checked={tags.is_dedicated_gluten_free} 
+              onChange={(c) => setTags(p => ({ ...p, is_dedicated_gluten_free: c }))} 
+            />
             <TagCheckbox 
               label="Gluten-Free Menu Available" 
               checked={tags.has_gf_menu} 

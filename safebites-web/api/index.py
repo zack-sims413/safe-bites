@@ -330,6 +330,13 @@ def search_restaurants(search: SearchRequest):
         
         # If it's already in the list from Google, we just update the score fields
         # If it wasn't returned by Google (but is in our DB), we ADD it.
+
+        # Calculate TOTAL Count (Google + WiseBites)
+        google_count = db_r.get('relevant_count', 0) or 0
+        wb_count = db_r.get('community_review_count', 0) or 0 # <--- NEW
+        total_count = google_count + wb_count
+
+        is_dedicated = db_r.get('is_dedicated_gluten_free', False)
         
         if pid in combined_results:
             # Update existing entry with DB scores
@@ -337,9 +344,10 @@ def search_restaurants(search: SearchRequest):
             entry["wise_bites_score"] = float(db_r['wise_bites_score']) if db_r['wise_bites_score'] else None
             entry["ai_safety_score"] = float(db_r['ai_safety_score']) if db_r['ai_safety_score'] else None
             entry["ai_summary"] = db_r['ai_summary']
-            entry["relevant_count"] = db_r['relevant_count']
+            entry["relevant_count"] = total_count
             entry["average_safety_rating"] = float(db_r['average_safety_rating']) if db_r['average_safety_rating'] else None
             entry["is_cached"] = True
+            entry["is_dedicated_gluten_free"] = is_dedicated
             entry["source"] = "Hybrid (Merged)"
         else:
             # Add new entry strictly from DB
@@ -360,7 +368,8 @@ def search_restaurants(search: SearchRequest):
                 "ai_safety_score": float(db_r['ai_safety_score']) if db_r['ai_safety_score'] else None,
                 "ai_summary": db_r['ai_summary'],
                 "wise_bites_score": float(db_r['wise_bites_score']) if db_r['wise_bites_score'] else None,
-                "relevant_count": db_r['relevant_count'],
+                "relevant_count": total_count,
+                "is_dedicated_gluten_free": is_dedicated,
                 "is_cached": True,
                 "source": "Supabase"
             }
@@ -393,6 +402,8 @@ def search_restaurants(search: SearchRequest):
                     db_score = cached.get("wise_bites_score")
                     if db_score and float(db_score) > 0:
                         r["wise_bites_score"] = float(db_score)
+
+                    r["is_dedicated_gluten_free"] = cached.get("is_dedicated_gluten_free", False)
                     
                     if is_fresh:
                         r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
@@ -462,6 +473,52 @@ def search_restaurants(search: SearchRequest):
 
 @app.post("/api/reviews")
 def get_reviews(req: ReviewRequest):
+    
+    def format_community_reviews(place_id):
+        """Fetches and formats WiseBites reviews for this place."""
+        formatted = []
+        wb_safe = 0
+        wb_unsafe = 0
+        wb_avg = 0
+        total_count = 0
+        
+        try:
+            # Fetch live from user_reviews table
+            resp = supabase.table("user_reviews").select("*").eq("place_id", place_id).execute()
+            wb_data = resp.data or []
+            total_count = len(wb_data)
+            
+            if wb_data:
+                wb_ratings = [r['rating'] for r in wb_data if r.get('rating')]
+                if wb_ratings:
+                    wb_avg = sum(wb_ratings) / len(wb_ratings)
+                
+                wb_safe = sum(1 for r in wb_data if r.get('did_feel_safe') is True)
+                wb_unsafe = sum(1 for r in wb_data if r.get('did_feel_safe') is False)
+
+                for r in wb_data:
+                    safety_tag = "SAFE" if r.get('did_feel_safe') else "UNSAFE"
+                    comment = r.get('comment') or "No specific comment."
+                    
+                    # Add Badge info if present
+                    badge_text = ""
+                    if r.get('is_dedicated_gluten_free'):
+                        badge_text = " [DEDICATED GF]"
+
+                    formatted.append({
+                        "source": "WiseBites Community",
+                        "text": f"[{safety_tag} REPORT]{badge_text} {comment}",
+                        "rating": r.get('rating', 0),
+                        "author": "WiseBites Member",
+                        "date": r.get('created_at', "")[:10],
+                        "relevant": True,
+                        "is_dedicated_gluten_free": r.get('is_dedicated_gluten_free', False)
+                    })
+        except Exception as e:
+            print(f"Error fetching community reviews: {e}")
+            
+        return formatted, wb_avg, wb_safe, wb_unsafe, total_count
+    
     # 1. CHECK CACHE (Skip if force_refresh is True)
     if not req.force_refresh:
         try:
@@ -472,14 +529,28 @@ def get_reviews(req: ReviewRequest):
                 last_updated = datetime.fromisoformat(record["last_updated"].replace('Z', '+00:00'))
                 if datetime.now(timezone.utc) - last_updated < timedelta(days=30): 
                     print("Returning Cached Data")
+
+                    # A. Get Google Reviews from Cache (Pure)
+                    cached_google_reviews = record["reviews"] or []
+                    
+                    # B. Fetch Community Reviews LIVE (Always Fresh)
+                    wb_reviews, wb_avg, wb_safe, wb_unsafe, wb_count = format_community_reviews(req.place_id)
+                    
+                    # C. Combine for Frontend Display
+                    combined_reviews = cached_google_reviews + wb_reviews
+
+                    # Recalculate Total Count
+                    google_count = int(record.get("relevant_count") or 0)
+
                     return {
-                        "reviews": record["reviews"],
-                        "relevant_count": record["relevant_count"],
+                        "reviews": combined_reviews, # Return BOTH
+                        "relevant_count": google_count + wb_count,
                         "average_safety_rating": record["average_safety_rating"],
                         "ai_safety_score": record.get("ai_safety_score", 0), 
                         "wise_bites_score": record.get("wise_bites_score", 0), 
                         "ai_summary": record.get("ai_summary", "No summary available."), 
-                        "source": "Cache"
+                        "is_dedicated_gluten_free": record.get("is_dedicated_gluten_free", False),
+                        "source": "Cache (Google) + Live (WiseBites)"
                     }
         except Exception as e:
             print(f"Supabase Read Error: {e}")
@@ -488,17 +559,17 @@ def get_reviews(req: ReviewRequest):
     print("Fetching fresh data from SerpApi...")
     raw_reviews = fetch_serpapi_reviews(req.place_id)
     
-    processed_reviews = []
+    google_reviews = []
     total_rating_sum = 0
-    relevant_count = 0
+    google_relevant_count = 0
     
     for r in raw_reviews:
         text_content = r.get("snippet", "")
         rating = r.get("rating", 0)
         if not text_content: continue 
-        relevant_count += 1
+        google_relevant_count += 1
         total_rating_sum += rating
-        processed_reviews.append({
+        google_reviews.append({
             "source": "Google",
             "text": text_content,
             "rating": rating,
@@ -507,61 +578,26 @@ def get_reviews(req: ReviewRequest):
             "relevant": True
         })
 
-    # --- FETCH WISEBITES COMMUNITY REVIEWS ---
-    wb_community_avg = 0
-    wb_safe_count = 0
-    wb_unsafe_count = 0
-    
-    try:
-        wb_reviews_response = supabase.table("user_reviews").select("*").eq("place_id", req.place_id).execute()
-        wb_reviews = wb_reviews_response.data or []
-        
-        if wb_reviews:
-            print(f"Found {len(wb_reviews)} WiseBites reviews.")
-            
-            wb_ratings = [r['rating'] for r in wb_reviews if r.get('rating')]
-            if wb_ratings:
-                wb_community_avg = sum(wb_ratings) / len(wb_ratings)
-            
-            wb_safe_count = sum(1 for r in wb_reviews if r.get('did_feel_safe') is True)
-            wb_unsafe_count = sum(1 for r in wb_reviews if r.get('did_feel_safe') is False)
+    wb_reviews, wb_avg, wb_safe, wb_unsafe, wb_count = format_community_reviews(req.place_id)
 
-            for wb_r in wb_reviews:
-                safety_tag = "SAFE" if wb_r.get('did_feel_safe') else "UNSAFE"
-                comment_text = wb_r.get('comment') or "No specific comment."
-                
-                processed_reviews.append({
-                    "source": "WiseBites Community", # Matches Prompt Label
-                    "text": f"[{safety_tag} REPORT] {comment_text}",
-                    "rating": wb_r.get('rating', 0),
-                    "author": "WiseBites Member",
-                    "date": wb_r.get('created_at', "")[:10], 
-                    "relevant": True
-                })
-    except Exception as e:
-        print(f"Error fetching community reviews: {e}")
-
-    # Calculate Average Safety Rating (from Google Relevant Reviews)
+    # Calculate Google-only Stats
     avg_safety_rating = 0
-    if relevant_count > 0:
-        avg_safety_rating = round(total_rating_sum / relevant_count, 1)
+    if google_relevant_count > 0:
+        avg_safety_rating = round(total_rating_sum / google_relevant_count, 1)
     
     # 3. RUN AI ANALYSIS
     print("Running AI Analysis...")
-    ai_score, ai_summary = analyze_reviews_with_ai(processed_reviews)
-
-    # --- CALCULATE SCORE ---
-    # Point #2: Use avg_safety_rating if valid, else generic req.rating
-    rating_to_use = avg_safety_rating if relevant_count > 0 else req.rating
+    all_reviews_for_ai = google_reviews + wb_reviews
+    ai_score, ai_summary = analyze_reviews_with_ai(all_reviews_for_ai)
 
     # --- CALCULATE SCORE ---
     final_wb_score = calculate_wisebites_score(
         ai_score, 
-        avg_safety_rating, # STRICTLY passing safety rating only
-        relevant_count,    # Google Count
-        wb_community_avg, 
-        wb_safe_count, 
-        wb_unsafe_count
+        avg_safety_rating, 
+        google_relevant_count,    
+        wb_avg, 
+        wb_safe, 
+        wb_unsafe
     )
 
     # 4. SAVE TO SUPABASE
@@ -576,9 +612,14 @@ def get_reviews(req: ReviewRequest):
             "lat": req.lat,
             "lng": req.lng,
             "hours_schedule": req.hours_schedule,
-            "reviews": processed_reviews,
-            "relevant_count": relevant_count,
-            "average_safety_rating": avg_safety_rating, # Saving the specific safety rating
+            
+            # --- CRITICAL FIX: Only save Google Reviews to DB ---
+            "reviews": google_reviews, 
+            # ----------------------------------------------------
+            
+            "relevant_count": google_relevant_count, # Google only count
+            "community_review_count": wb_count,      # Separate column
+            "average_safety_rating": avg_safety_rating, 
             "ai_safety_score": ai_score, 
             "wise_bites_score": final_wb_score,
             "ai_summary": ai_summary,    
@@ -589,8 +630,8 @@ def get_reviews(req: ReviewRequest):
         print(f"Supabase Write Error: {e}")
 
     return {
-        "reviews": processed_reviews, 
-        "relevant_count": relevant_count, 
+        "reviews": google_reviews, 
+        "relevant_count": google_relevant_count + wb_count,
         "average_safety_rating": avg_safety_rating,
         "ai_safety_score": ai_score,
         "wise_bites_score": final_wb_score,

@@ -36,6 +36,7 @@ interface CommunityReview {
   staff_knowledgeable: boolean;
   did_feel_safe: boolean;
   has_dedicated_fryer: boolean;
+  is_dedicated_gluten_free: boolean;
 }
 
 export default function RestaurantDetailsPage() {
@@ -501,6 +502,7 @@ export default function RestaurantDetailsPage() {
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap gap-2 mb-4">
+                                    <Badge label="Dedicated GF" active={review.is_dedicated_gluten_free} />
                                     <Badge label="GF Menu" active={review.has_gf_menu} />
                                     <Badge label="Staff Knowledge" active={review.staff_knowledgeable} />
                                     <Badge label="Dedicated Fryer" active={review.has_dedicated_fryer} />

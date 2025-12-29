@@ -23,6 +23,7 @@ interface Review {
   staff_knowledgeable: boolean;
   did_feel_safe: boolean;
   has_dedicated_fryer: boolean;
+  is_dedicated_gluten_free: boolean | null;
   // The joined data from the 'restaurants' table comes in as an object or array
   restaurants: RestaurantData | null;
 }
@@ -49,7 +50,8 @@ export default function MyReviewsPage() {
           restaurants (
             name,
             city,
-            address
+            address,
+            is_dedicated_gluten_free
           )
         `)
         .eq("user_id", user.id)
@@ -157,6 +159,11 @@ export default function MyReviewsPage() {
 
                             {/* SAFETY BADGES */}
                             <div className="flex flex-wrap gap-2 mb-6">
+                                {review.is_dedicated_gluten_free && (
+                                    <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-xs font-medium px-2.5 py-1 rounded-full border border-emerald-200">
+                                        <ShieldCheck className="w-3 h-3" /> Dedicated GF
+                                    </span>
+                                )}
                                 {review.has_gf_menu && (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wide border border-emerald-100">
                                         <Utensils className="w-3 h-3" /> GF Menu

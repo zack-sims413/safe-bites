@@ -16,6 +16,7 @@ interface PlaceItem {
     city: string;
     wise_bites_score: number | null; 
     ai_safety_score: number | null; 
+    is_dedicated_gluten_free?: boolean;
   };
 }
 
@@ -40,7 +41,7 @@ export default function FavoritesPage() {
 
       const querySelect = `
         id, created_at,
-        restaurants (place_id, name, city, wise_bites_score, ai_safety_score)
+        restaurants (place_id, name, city, wise_bites_score, ai_safety_score, is_dedicated_gluten_free)
       `;
 
       // 1. Fetch BOTH lists in parallel
@@ -196,6 +197,11 @@ export default function FavoritesPage() {
                                 <p className="text-sm font-medium text-slate-500 flex items-center gap-1">
                                     {r.city || "Unknown City"}
                                 </p>
+                                {r.is_dedicated_gluten_free && (
+                                         <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 uppercase tracking-wide">
+                                            <ShieldCheck className="w-3 h-3" /> Dedicated GF
+                                        </span>
+                                    )}
                             </div>
                              {/* SCORE BADGE */}
                             <div className={`px-3 py-1.5 rounded-xl font-black text-sm shadow-sm border shrink-0 ${scoreColor}`}>

@@ -23,6 +23,7 @@ interface Restaurant {
   wise_bites_score?: number | null; 
   is_cached?: boolean;
   favorite_id?: string;
+  is_dedicated_gluten_free?: boolean;
 }
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
@@ -177,7 +178,8 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
             address: place.address, 
             city: place.city, 
             rating: place.rating, 
-            hours_schedule: place.hours_schedule 
+            hours_schedule: place.hours_schedule,
+            is_dedicated_gluten_free: place.is_dedicated_gluten_free
         }),
       })
         .then((res) => res.json())
@@ -221,6 +223,12 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       <div className="p-5 pb-0 relative"> 
         <div className="flex justify-between items-start gap-4">
           <div className="flex-1 min-w-0">
+            {/* NEW: Dedicated GF Badge */}
+              {place.is_dedicated_gluten_free && (
+                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full mb-2 uppercase tracking-wide border border-emerald-200">
+                  <ShieldCheck className="w-3 h-3" /> 100% Dedicated GF
+                </span>
+              )}
             <Link href={`/restaurant/${place.place_id}`} className="group/link block">
               <h2 className="text-xl font-bold text-slate-900 leading-tight mb-1 group-hover/link:text-green-700 group-hover/link:underline transition-colors break-words">
                 {place.name}
@@ -289,7 +297,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
                 ) : !place.is_cached && !hasFetched ? (
                 <p className="text-xs text-slate-400 italic flex items-center gap-2 mt-2"><Info className="w-3 h-3" /> Scroll to trigger AI analysis...</p>
                 ) : relevantCount === 0 ? (
-                <div className="flex items-start gap-2 mt-1"><AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" /><p className="text-sm text-slate-500">No reviews found mentioning gluten or celiac-related reviews.</p></div>
+                <div className="flex items-start gap-2 mt-1"><AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" /><p className="text-sm text-slate-500">No reviews found mentioning gluten or celiac-related issues.</p></div>
                 ) : wiseBitesScore !== null ? (
                 
                 <div className={`p-3 rounded-xl border ${getScoreColor(wiseBitesScore)}`}>
