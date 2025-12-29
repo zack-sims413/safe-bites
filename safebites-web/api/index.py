@@ -484,7 +484,11 @@ def get_reviews(req: ReviewRequest):
         
         try:
             # Fetch live from user_reviews table
-            resp = supabase.table("user_reviews").select("*").eq("place_id", place_id).execute()
+            resp = supabase.table("user_reviews")\
+                .select("*, profiles(dietary_preference)")\
+                .eq("place_id", place_id)\
+                .execute()
+                
             wb_data = resp.data or []
             total_count = len(wb_data)
             
@@ -499,6 +503,11 @@ def get_reviews(req: ReviewRequest):
                 for r in wb_data:
                     safety_tag = "SAFE" if r.get('did_feel_safe') else "UNSAFE"
                     comment = r.get('comment') or "No specific comment."
+
+                    # Extract User Sensitivity
+                    # Supabase returns the joined table as a nested dictionary
+                    user_profile = r.get('profiles') or {}
+                    sensitivity = user_profile.get('dietary_preference', 'Unknown')
                     
                     # Add Badge info if present
                     badge_text = ""
@@ -510,6 +519,7 @@ def get_reviews(req: ReviewRequest):
                         "text": f"[{safety_tag} REPORT]{badge_text} {comment}",
                         "rating": r.get('rating', 0),
                         "author": "WiseBites Member",
+                        "user_sensitivity": sensitivity,
                         "date": r.get('created_at', "")[:10],
                         "relevant": True,
                         "is_dedicated_gluten_free": r.get('is_dedicated_gluten_free', False)

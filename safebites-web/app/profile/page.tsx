@@ -16,7 +16,9 @@ export default function ProfilePage() {
   // Form State
   const [fullName, setFullName] = useState("");
   const [birthday, setBirthday] = useState("");
-  const [preference, setPreference] = useState<"celiac" | "intolerance" | "allergy" | "other">("celiac");
+  const [preference, setPreference] = useState<
+    "symptomatic_celiac" | "asymptomatic_celiac" | "gluten_intolerant" | "wheat_allergy" | "other"
+  >("symptomatic_celiac");
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -32,7 +34,7 @@ export default function ProfilePage() {
       if (data) {
         setFullName(data.full_name || "");
         setBirthday(data.birthday || "");
-        setPreference(data.dietary_preference || "celiac");
+        setPreference(data.dietary_preference || "symptomatic_celiac");
       }
       setLoading(false);
     };
@@ -115,10 +117,31 @@ export default function ProfilePage() {
                     <h2 className="font-black text-lg text-black border-b border-slate-200 pb-2">Dietary Needs</h2>
                     <div className="grid grid-cols-1 gap-3">
                         {[
-                            { id: "celiac", label: "Celiac Disease", desc: "Strict protocols required (dedicated fryers, etc)." },
-                            { id: "intolerance", label: "Gluten Intolerant", desc: "Avoid gluten, but cross-contact is less critical." },
-                            { id: "allergy", label: "Wheat Allergy", desc: "Strict avoidance of wheat." },
-                            { id: "other", label: "Other", desc: "Supporting friend or loved one." }
+                            { 
+                              id: "symptomatic_celiac", 
+                              label: "Symptomatic Celiac", 
+                              desc: "I have Celiac Disease and react to cross-contamination." 
+                            },
+                            { 
+                              id: "asymptomatic_celiac", 
+                              label: "Asymptomatic Celiac", 
+                              desc: "I have Celiac Disease but do not feel immediate symptoms." 
+                            },
+                            { 
+                              id: "gluten_intolerant", 
+                              label: "Gluten Intolerant / Sensitivity", 
+                              desc: "I avoid gluten, but cross-contact is less critical." 
+                            },
+                            { 
+                              id: "wheat_allergy", 
+                              label: "Wheat Allergy", 
+                              desc: "I strictly avoid wheat." 
+                            },
+                            { 
+                              id: "other", 
+                              label: "Other", 
+                              desc: "Supporting friend or loved one." 
+                            }
                         ].map((opt) => (
                             <button
                                 key={opt.id}
