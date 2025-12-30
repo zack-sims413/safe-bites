@@ -146,7 +146,7 @@ function HomeContent() {
               <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-green-400 transition-colors" />
               <input 
                 type="text" 
-                placeholder="Location (e.g. Denver, CO)" 
+                placeholder="Location (e.g. Atlanta, GA)" 
                 className="w-full h-14 pl-12 pr-4 rounded-xl bg-slate-800/50 border border-transparent focus:border-green-500/50 focus:bg-slate-800 text-white placeholder:text-slate-500 outline-none transition-all"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}

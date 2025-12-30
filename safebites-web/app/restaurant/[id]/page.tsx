@@ -335,11 +335,11 @@ export default function RestaurantDetailsPage() {
                 {/* SHARE BUTTON */}
                 <button 
                     onClick={handleShare}
-                    // CHANGED: Removed 'border' and added 'flex-none' to stop stretching
-                    className="flex-none p-2 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all"
+                    className="flex-none flex items-center gap-2 p-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all whitespace-nowrap"
                     title="Share this place"
                 >
                     <Share2 className="w-5 h-5" />
+                    <span className="font-medium">Share This Place</span>
                 </button>
 
                 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}&query_place_id=${place.place_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors">
