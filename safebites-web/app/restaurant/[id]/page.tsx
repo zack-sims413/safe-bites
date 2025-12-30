@@ -335,7 +335,8 @@ export default function RestaurantDetailsPage() {
                 {/* SHARE BUTTON */}
                 <button 
                     onClick={handleShare}
-                    className="p-2 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all"
+                    // CHANGED: Removed 'border' and added 'flex-none' to stop stretching
+                    className="flex-none p-2 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all"
                     title="Share this place"
                 >
                     <Share2 className="w-5 h-5" />
