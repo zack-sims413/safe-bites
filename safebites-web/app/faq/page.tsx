@@ -20,6 +20,9 @@ export default function FAQPage() {
                     <p className="text-slate-600 text-sm leading-relaxed">
                         Every time you search and we analyze thousands of reviews to flag relevant reviws, we pay server and processing costs. To ensure WiseBites remains fast, accurate, and ad-free, we rely on subscriber support. This allows us to keep the platform running and constantly improve our detection algorithms without selling your data to advertisers.
                     </p>
+                    <p className="text-slate-600 text-sm leading-relaxed">
+                        Additonally, to ensure quality reviews and prevent spam, we let reviews from paid subscribers carry more weight in our AI analysis. This creates a positive feedback loop where supporting the platform directly improves the quality of data for everyone.
+                    </p>
                 </div>
 
                 <div className="flex items-center gap-2 mb-6">

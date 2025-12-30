@@ -198,7 +198,8 @@ export default function RestaurantDetailsPage() {
     setLoading(true);
     try {
         if (place) {
-            await fetch("/api/reviews", {
+            // 1. Capture the response from the API
+            const response = await fetch("/api/reviews", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -207,11 +208,36 @@ export default function RestaurantDetailsPage() {
                     address: place.address,
                     city: place.city,
                     rating: place.rating,
-                    force_refresh: true 
+                    force_refresh: true // Correct: Forces a fresh AI run
                 })
             });
+            
+            // 2. Parse the fresh data (New summary, new score)
+            const freshData = await response.json();
+
+            // 3. Update the 'place' state immediately with the new AI data
+            setPlace(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    ai_summary: freshData.ai_summary,
+                    ai_safety_score: freshData.ai_safety_score,
+                    relevant_count: freshData.relevant_count,
+                    average_safety_rating: freshData.average_safety_rating,
+                    wise_bites_score: freshData.wise_bites_score
+                };
+            });
+
+            // 4. Update the big score display
+            if (freshData.wise_bites_score) {
+                setCalculatedScore(freshData.wise_bites_score);
+            }
         }
-    } catch (e) { console.error("Failed to refresh AI analysis", e); }
+    } catch (e) { 
+        console.error("Failed to refresh AI analysis", e); 
+    }
+    
+    // 5. Still call fetchData to refresh the list of community reviews (the text list)
     await fetchData();
   };
 

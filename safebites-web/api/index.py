@@ -86,56 +86,99 @@ def geocode_address(address: str):
 
 def analyze_reviews_with_ai(reviews: List[dict]):
     """
-    Sends reviews to Groq (llama-3.3-70b-versatile) to generate a safety score and summary.
+    Sends reviews to Groq (llama-3.3-70b-versatile) to generate a weighted safety score and summary.
     """
     if not reviews:
         return 0, "No reviews available to analyze."
     
-    # 1. Define keywords that matter to us
-    keywords = ["gluten", "celiac", "cross-contamination", "dedicated fryer", "coeliac"]
+    # 1. Define keywords that matter
+    keywords = ["gluten", "celiac", "cross-contamination", "dedicated fryer", "coeliac", "dedicated"]
 
-    # 2. Sort the reviews: Put reviews containing these keywords at the TOP
-    # This ensures that even if we cut off the list, we keep the relevant ones.
-    sorted_reviews = sorted(
-        reviews, 
-        key=lambda r: any(k in r.get('text', '').lower() for k in keywords), 
-        reverse=True
-    )
+    # 2. Helper function to determine sort weight (Higher = more important)
+    def get_review_weight(r):
+        weight = 0
+        source = r.get("source", "Google")
+        is_premium = r.get("is_premium", False)  # Check for premium flag
+        text = r.get('text', '').lower()
 
-    # 3. Format text WITH User Context
+        # Tier 1: Source Hierarchy
+        if is_premium:
+            weight += 300
+        elif source == "WiseBites Community":
+            weight += 200
+        else:
+            weight += 100
+            
+        # Tier 2: Keyword Relevance
+        if any(k in text for k in keywords):
+            weight += 10
+            
+        return weight
+
+    # 3. Sort reviews by our new weighted system
+    sorted_reviews = sorted(reviews, key=get_review_weight, reverse=True)
+
+    # 4. Calculate Stats (Do the math for the AI)
+    total_count = min(len(sorted_reviews), 50) # We are only sending top 50
+    wb_premium_count = 0
+    wb_member_count = 0
+    
     formatted_lines = []
+    
+    # 5. Format text with strict labels
     for r in sorted_reviews[:50]:
         source_label = r.get("source", "Google")
         sensitivity = r.get("user_sensitivity")
+        is_premium = r.get("is_premium", False)
         
-        # If it's our user, tag their sensitivity!
-        if sensitivity:
-            # Clean up the string (e.g. "symptomatic_celiac" -> "Symptomatic Celiac")
-            readable_sens = sensitivity.replace("_", " ").title()
-            prefix = f"[WiseBites {readable_sens} Member]"
+        # Determine Label
+        if is_premium:
+            wb_premium_count += 1
+            # If they have specific sensitivity, include it
+            sens_text = f" {sensitivity.replace('_', ' ').title()}" if sensitivity else ""
+            prefix = f"[WiseBites Premium Member{sens_text}]"
         elif source_label == "WiseBites Community":
-            prefix = "[WiseBites Member]"
+            wb_member_count += 1
+            sens_text = f" {sensitivity.replace('_', ' ').title()}" if sensitivity else ""
+            prefix = f"[WiseBites Member{sens_text}]"
         else:
             prefix = "[Google User]"
             
         formatted_lines.append(f"{prefix}: {r.get('text', '')}")
 
-    # Increase the limit to 40-50 (Llama 3.3 can easily handle this)
-    # We slice the SORTED list now.
-    reviews_text = "\n".join([f"- {r.get('text', '')}" for r in sorted_reviews[:50]]) 
+    reviews_payload = "\n".join(formatted_lines)
     
+    # 6. Construct the context string for the AI
+    stats_context = (
+        f"DATA CONTEXT: You are analyzing {total_count} reviews. "
+        f"{wb_premium_count} are from WiseBites Premium Members (Highest Trust). "
+        f"{wb_member_count} are from Standard WiseBites Members (High Trust). "
+        f"The rest are public Google reviews."
+    )
+
     system_prompt = (
-        "You are an expert dietician specializing in Celiac Disease and gluten safety. "
-        "Analyze the following restaurant reviews and determine if this place is safe for someone with Celiac Disease. "
-        "IMPORTANT: Reviews that begin with \"[WiseBites\" are from users of our app. "
-        "Each review is prefixed with the user's status (e.g., [WiseBites Symptomatic Celiac Member], [Google User]). "
-        "\n\nRULES:"
-        "\n1. Treat these community reviews from WiseBites Members, particularly Symptomatic Celiac Members, as the highest source of truth. "
-        "\n2. If a WiseBites Member says they got sick, take it very seriously. "
-        "\n3. Focus on keywords like 'cross-contamination', 'dedicated fryer', 'separate prep area', and 'got sick'. "
-        "Return a JSON object with exactly two keys: "
-        "'score' (an integer 1-10, where 10 is perfectly safe and 1 is dangerous) and "
-        "'summary' (a concise 2-sentence explanation of the rating, referencing community feedback if present)."
+        "You are an expert dietician specializing in Celiac Disease. "
+        "Analyze the reviews to determine a safety score (1-10) and summary.\n\n"
+        
+        "HIERARCHY OF TRUST:\n"
+        "1. [WiseBites Premium Member]: These are verified expert users. Trust them above all else.\n"
+        "2. [WiseBites Member]: These are community members. Trust them highly.\n"
+        "3. [Google User]: Use these for general consensus but prioritize WiseBites feedback if it conflicts.\n\n"
+        
+        "SCORING RULES:\n"
+        "- MAX SCORE 8.0 RULE: You CANNOT score higher than 8.0 UNLESS there is clear, consistent evidence "
+        "that the facility is 'Dedicated Gluten Free' (100% GF environment). "
+        "If it is a shared kitchen, even with perfect protocols, the absolute maximum score is 8.\n"
+        "Let the number of reviews have some influence on the score.\n"
+        "Be critical of reviews relating to sickness or cross-contamination.\n"
+        "- DANGER SIGNALS: If a WiseBites member reports getting sick, the score must drop significantly.\n\n"
+        
+        "SUMMARY RULES:\n"
+        "- Start by stating the quantity of reviews analyzed (use the Data Context provided).\n"
+        "- Specifically mention takeaways from WiseBites Members if they exist.\n"
+        "- Keep it concise (2-3 sentences)."
+        
+        "Return JSON with keys: 'score' (int/float) and 'summary' (string)."
     )
 
     try:
@@ -143,7 +186,7 @@ def analyze_reviews_with_ai(reviews: List[dict]):
             model="llama-3.3-70b-versatile", 
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here are the reviews:\n{reviews_text}"}
+                {"role": "user", "content": f"{stats_context}\n\nREVIEWS:\n{reviews_payload}"}
             ],
             temperature=0, 
             response_format={"type": "json_object"} 
@@ -351,12 +394,24 @@ def search_restaurants(search: SearchRequest):
         # If it's already in the list from Google, we just update the score fields
         # If it wasn't returned by Google (but is in our DB), we ADD it.
 
+        # We need to decide right now if this DB record is stale
+        last_updated_str = db_r.get("last_updated")
+        is_fresh = False
+        if last_updated_str:
+            try:
+                # Handle potential timezone Z or +00:00 differences
+                clean_date = last_updated_str.replace('Z', '+00:00')
+                last_updated = datetime.fromisoformat(clean_date)
+                if datetime.now(timezone.utc) - last_updated < timedelta(days=30):
+                    is_fresh = True
+            except Exception as e:
+                print(f"Date parsing error for {pid}: {e}")
+
         # Calculate TOTAL Count (Google + WiseBites)
         google_count = db_r.get('relevant_count', 0) or 0
         wb_count = db_r.get('community_review_count', 0) or 0 # <--- NEW
         total_count = google_count + wb_count
         db_hours = db_r.get('hours_schedule', [])
-
         is_dedicated = db_r.get('is_dedicated_gluten_free', False)
         
         if pid in combined_results:
@@ -367,7 +422,7 @@ def search_restaurants(search: SearchRequest):
             entry["ai_summary"] = db_r['ai_summary']
             entry["relevant_count"] = total_count
             entry["average_safety_rating"] = float(db_r['average_safety_rating']) if db_r['average_safety_rating'] else None
-            entry["is_cached"] = True
+            entry["is_cached"] = is_fresh
             entry["is_dedicated_gluten_free"] = is_dedicated
             entry["hours_schedule"] = db_hours if db_hours else entry["hours_schedule"]
             entry["source"] = "Hybrid (Merged)"
@@ -393,7 +448,7 @@ def search_restaurants(search: SearchRequest):
                 "relevant_count": total_count,
                 "is_dedicated_gluten_free": is_dedicated,
                 "hours_schedule": db_hours,
-                "is_cached": True,
+                "is_cached": is_fresh,
                 "source": "Supabase"
             }
 
@@ -403,7 +458,10 @@ def search_restaurants(search: SearchRequest):
     # --- 3. FETCH SCORES FOR NEW GOOGLE RESULTS ---
     # (Existing logic to batch fetch scores for items that came ONLY from Google)
     # We filter for items where 'is_cached' is False
-    uncached_ids = [r['place_id'] for r in final_list if not r['is_cached']]
+    uncached_ids = [
+        r['place_id'] for r in final_list 
+        if not r['is_cached'] and r['source'] == "Google"
+    ]
     
     if uncached_ids:
         try:
@@ -411,39 +469,51 @@ def search_restaurants(search: SearchRequest):
             cache_map = {row['place_id']: row for row in response.data}
 
             for r in final_list:
-                if r['place_id'] in cache_map and not r['is_cached']:
+                if r['place_id'] in cache_map:
                     cached = cache_map[r['place_id']]
                     
-                    # ... (Standard freshness logic & score hydration) ...
+                    # 1. CHECK FRESHNESS FIRST
                     last_updated_str = cached.get("last_updated")
                     is_fresh = False
                     if last_updated_str:
+                        # Convert ISO format to datetime object
                         last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
                         if datetime.now(timezone.utc) - last_updated < timedelta(days=30):
                             is_fresh = True
+
+                    # 2. ALWAYS HYDRATE DATA (Even if Stale)
+                    # This ensures the UI is never empty while waiting for the background update.
                     
+                    # Scores
                     db_score = cached.get("wise_bites_score")
                     if db_score and float(db_score) > 0:
                         r["wise_bites_score"] = float(db_score)
-
-                    r["is_dedicated_gluten_free"] = cached.get("is_dedicated_gluten_free", False)
                     
-                    if is_fresh:
-                        r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
-                        r["ai_summary"] = cached.get("ai_summary")
-                        safety_rating = float(cached.get("average_safety_rating") or 0)
-                        google_count = int(cached.get("relevant_count") or 0)
-                        wb_count = int(cached.get("community_review_count") or 0)
-                        r["relevant_count"] = google_count + wb_count
-                        r["is_cached"] = True
-                        
-                        if r["wise_bites_score"] is None or r["wise_bites_score"] == 0:
-                            r["wise_bites_score"] = calculate_wisebites_score(
-                                r["ai_safety_score"],
-                                safety_rating, 
-                                google_count,
-                                0, 0, 0 
-                            )
+                    r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
+                    r["ai_summary"] = cached.get("ai_summary")
+                    r["is_dedicated_gluten_free"] = cached.get("is_dedicated_gluten_free", False)
+
+                    # Counts
+                    google_count = int(cached.get("relevant_count") or 0)
+                    wb_count = int(cached.get("community_review_count") or 0)
+                    r["relevant_count"] = google_count + wb_count
+                    
+                    # Safety Rating
+                    r["average_safety_rating"] = float(cached.get("average_safety_rating") or 0)
+                    
+                    # 3. SET THE CACHE FLAG
+                    # If is_fresh is True, frontend does NOTHING.
+                    # If is_fresh is False, frontend MUST fetch updates.
+                    r["is_cached"] = is_fresh 
+
+                    # 4. RE-CALCULATE SCORE IF MISSING (Fallback)
+                    if (r["wise_bites_score"] is None or r["wise_bites_score"] == 0) and r["ai_safety_score"] > 0:
+                        r["wise_bites_score"] = calculate_wisebites_score(
+                            r["ai_safety_score"],
+                            r["average_safety_rating"], 
+                            google_count,
+                            0, 0, 0 
+                        )
 
                         # --- AUTO-UPDATE METADATA ---
                     # Check if DB is missing data that Google just provided
@@ -517,7 +587,7 @@ def get_reviews(req: ReviewRequest):
         try:
             # Fetch live from user_reviews table
             resp = supabase.table("user_reviews")\
-                .select("*, profiles(dietary_preference)")\
+                .select("*, profiles(dietary_preference, is_premium)")\
                 .eq("place_id", place_id)\
                 .execute()
                 
@@ -540,7 +610,8 @@ def get_reviews(req: ReviewRequest):
                     # Supabase returns the joined table as a nested dictionary
                     user_profile = r.get('profiles') or {}
                     sensitivity = user_profile.get('dietary_preference', 'Unknown')
-                    
+                    user_is_premium = user_profile.get('is_premium', False)
+
                     # Add Badge info if present
                     badge_text = ""
                     if r.get('is_dedicated_gluten_free'):
@@ -554,7 +625,8 @@ def get_reviews(req: ReviewRequest):
                         "user_sensitivity": sensitivity,
                         "date": r.get('created_at', "")[:10],
                         "relevant": True,
-                        "is_dedicated_gluten_free": r.get('is_dedicated_gluten_free', False)
+                        "is_dedicated_gluten_free": r.get('is_dedicated_gluten_free', False),
+                        "is_premium": user_is_premium
                     })
         except Exception as e:
             print(f"Error fetching community reviews: {e}")
