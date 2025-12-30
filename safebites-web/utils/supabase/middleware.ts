@@ -40,9 +40,10 @@ export async function updateSession(request: NextRequest) {
   // Also allow for people to get to signup and auth pages
   if (
     !user && 
+    request.nextUrl.pathname !== '/' && // <--- NEW: Allow the Home Page (Landing Page)
     !request.nextUrl.pathname.startsWith('/login') && 
     !request.nextUrl.pathname.startsWith('/auth') &&
-    !request.nextUrl.pathname.startsWith('/signup') // <--- ADD THIS LINE
+    !request.nextUrl.pathname.startsWith('/signup')
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
