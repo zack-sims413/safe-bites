@@ -7,17 +7,19 @@ const inter = Inter({ subsets: ["latin"] });
 
 // 1. Viewport settings (Standard for PWAs)
 export const viewport: Viewport = {
-  themeColor: "#16a34a", // Sets the Android status bar color
+  themeColor: "#16a34a", // Sets the Android status bar color to match your brand green
   width: "device-width",
   initialScale: 1,
   maximumScale: 1, // Prevents zooming on inputs for a "native app" feel
 };
 
-// 2. Metadata with PWA links
+// 2. Metadata with PWA links & Branding
 export const metadata: Metadata = {
-  title: "WiseBites | Eat without fear",
+  title: "WiseBites | The Celiac Restaurant Navigator",
   description: "Find celiac-friendly dining with AI-powered reviews.",
-  manifest: "/manifest.json", // Links to the file in public/ folder
+  
+  // PWA Configuration
+  manifest: "/manifest.json", 
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -25,7 +27,15 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: "/icon-192.png",
-    apple: "/icon-192.png", // iPhone home screen icon
+    apple: "/icon-192.png", // Ensures the icon appears on iPhone home screens
+  },
+  
+  // Open Graph (Link Previews for iMessage/Text/Slack)
+  openGraph: {
+    title: "WiseBites",
+    description: "The Celiac Restaurant Navigator. Find celiac-friendly dining with AI-powered reviews.",
+    siteName: "WiseBites",
+    type: "website",
   },
 };
 
