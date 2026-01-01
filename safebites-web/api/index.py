@@ -258,7 +258,7 @@ def fetch_google_search(query: str, location: str, lat: float = None, lng: float
     payload = {
         "textQuery": text_query, 
         "minRating": 3.5, 
-        "maxResultCount": 20
+        "maxResultCount": 30
     }
 
     if lat and lng:
@@ -427,6 +427,9 @@ def search_restaurants(search: SearchRequest):
             entry["hours_schedule"] = db_hours if db_hours else entry["hours_schedule"]
             entry["source"] = "Hybrid (Merged)"
         else:
+            db_lat = db_r.get('lat', 0)
+            db_lng = db_r.get('lng', 0)
+            
             # Add new entry strictly from DB
             combined_results[pid] = {
                 "name": db_r['name'],
@@ -437,9 +440,8 @@ def search_restaurants(search: SearchRequest):
                 # Note: DB RPC doesn't return lat/lng/hours in the simplified query above
                 # You might need to select them in the RPC if you want them here.
                 # For now, we assume basic display data is enough or we fetch details later.
-                "location": {"lat": 0, "lng": 0}, # Placeholder if not selected
+                "location": {"lat": db_lat, "lng": db_lng}, # Placeholder if not selected
                 "distance_miles": round(db_r['dist_miles'], 2),
-                "hours_schedule": [],
                 "google_types": db_r['google_types'],
                 "price_level": None,
                 "ai_safety_score": float(db_r['ai_safety_score']) if db_r['ai_safety_score'] else None,
@@ -728,7 +730,7 @@ def get_reviews(req: ReviewRequest):
             "hours_schedule": req.hours_schedule,
             
             # --- CRITICAL FIX: Only save Google Reviews to DB ---
-            "reviews": google_reviews, 
+            "reviews": google_reviews if google_reviews else [],
             # ----------------------------------------------------
             
             "relevant_count": google_relevant_count, # Google only count
