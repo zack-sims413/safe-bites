@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useInView } from "react-intersection-observer";
-import { MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info, Heart, ThumbsDown, ThumbsUp, Loader2, X } from "lucide-react";
+import { MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info, Heart, ThumbsDown, ThumbsUp, Loader2, X, Ban } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../utils/supabase/client";
 import Link from "next/link";
@@ -262,7 +262,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
                 {actionLoading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : <Heart className={`w-5 h-5 transition-colors ${isFavorite ? "fill-red-500 text-red-500" : "text-slate-400 hover:text-red-400"}`} />}
             </button>
             <button onClick={toggleDislike} disabled={actionLoading} className={`p-2 rounded-full border shadow-sm transition-all ${isDisliked ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-600"}`} title="Add to Avoid List">
-                <X className="w-5 h-5" />
+                <Ban className="w-5 h-5" />
             </button>
         </div>
       </div>

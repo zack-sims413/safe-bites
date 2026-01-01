@@ -7,7 +7,7 @@ import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
   Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
-  Heart, X, Clock, ChevronDown, Camera, AlertTriangle, Share2
+  Heart, X, Clock, ChevronDown, Camera, AlertTriangle, Share2, Ban
 } from "lucide-react";
 import Image from "next/image"; // Optimization
 
@@ -353,7 +353,7 @@ export default function RestaurantDetailsPage() {
                         <Heart className={`w-4 h-4 ${userAction === 'saved' ? "fill-current" : ""}`} /> {userAction === 'saved' ? "Saved to Profile" : "Save to Profile"}
                     </button>
                     <button onClick={() => handleToggleAction('avoid')} disabled={actionLoading} className={`p-2 rounded-full border transition-all ${userAction === 'avoided' ? "bg-red-50 text-red-600 border-red-200" : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200"}`} title="Add to avoid list">
-                        <X className="w-5 h-5" />
+                        <Ban className="w-5 h-5" />
                     </button>
                 </div>
                 <div className="hidden sm:block w-px h-8 bg-slate-200 self-center mx-2" />
