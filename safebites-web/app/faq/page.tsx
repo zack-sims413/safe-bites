@@ -19,9 +19,9 @@ export default function FAQPage() {
                     </p>
                     <p className="text-slate-600 text-sm leading-relaxed">
                         Every time you search and we analyze thousands of reviews to flag relevant reviws, we pay server and processing costs. To ensure WiseBites remains fast, accurate, and ad-free, we rely on subscriber support. This allows us to keep the platform running and constantly improve our detection algorithms without selling your data to advertisers.
-                    </p>
+                    </p><br></br>
                     <p className="text-slate-600 text-sm leading-relaxed">
-                        Additonally, to ensure quality reviews and prevent spam, we let reviews from paid subscribers carry more weight in our AI analysis. This creates a positive feedback loop where supporting the platform directly improves the quality of data for everyone.
+                        Additonally, to ensure quality reviews and prevent spam, we let reviews from paid subscribers carry more weight in our analysis. This creates a positive feedback loop where supporting the platform directly improves the quality of data for everyone.
                     </p>
                 </div>
 
@@ -53,7 +53,7 @@ export default function FAQPage() {
                                     <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
                                         <Filter className="w-4 h-4 text-blue-400" />
                                     </div>
-                                    <span className="font-bold text-sm">Dedicated Fryer Filters</span>
+                                    <span className="font-bold text-sm">Dedicated Gluten Filters</span>
                                 </li>
                                 <li className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
@@ -92,7 +92,7 @@ export default function FAQPage() {
                     <div>
                         <h4 className="font-bold text-slate-900 flex items-center gap-2 mb-2">
                             <Filter className="w-4 h-4 text-blue-500" />
-                            Filter by "Strict Safety"
+                            Filter by "Gluten Needs"
                         </h4>
                         <p className="text-xs text-slate-600 leading-relaxed">
                             Stop scrolling. WiseBites+ lets you toggle filters like <strong>"Dedicated Fryer Only"</strong> or <strong>"100% GF Kitchen"</strong> to instantly remove risky options from your search results.
@@ -134,6 +134,15 @@ export default function FAQPage() {
                         <p className="text-slate-600 text-sm leading-relaxed">
                             We aggregate data from two main sources: broad public datasets (like Google Reviews) and our own proprietary WiseBites community reviews. 
                             While Google gives us volume, we prioritize and heavily weight reviews left directly on WiseBites, as these come from verified community members specifically assessing gluten safety. Our goal is to grow our own database to become the single source of truth for the community.
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3 className="font-bold text-slate-900 mb-2">Why do you need to use reviews from Google?</h3>
+                        <p className="text-slate-600 text-sm leading-relaxed">
+                            The truth is, there really aren't many places with a large number of gluten reviews that are recent & relevant. Additionally, with our platform being new, we do not have existing user data we can rely on that. 
+                            By leveraging existing Google reviews, it helps give us some data and information on restaurants. That being said, we place a more significant weight on reviews submitted on the WiseBites platform, because we
+                            have a review form dedicated to answering critical questions or celiac and gluten-intolerant individuals. 
                         </p>
                     </div>
 
