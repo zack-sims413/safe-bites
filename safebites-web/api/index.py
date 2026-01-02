@@ -706,7 +706,7 @@ def get_reviews(req: ReviewRequest):
                     cached_google_reviews = record["reviews"] or []
                     
                     # B. Fetch Community Reviews LIVE (Always Fresh)
-                    wb_reviews, wb_avg, wb_safe, wb_unsafe, wb_count = format_community_reviews(req.place_id)
+                    wb_reviews, wb_avg, wb_safe_free, wb_safe_prem, wb_dedi, wb_unsafe_free, wb_unsafe_prem, wb_count = format_community_reviews(req.place_id)
                     
                     # C. Combine for Frontend Display
                     combined_reviews = cached_google_reviews + wb_reviews

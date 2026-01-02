@@ -1,4 +1,4 @@
-import { Shield, Lock, FileText, Sparkles, Database, Server, Zap, Filter, Infinity } from "lucide-react";
+import { Shield, Lock, FileText, Sparkles, Database, Server, Zap, Filter, Infinity, Smartphone } from "lucide-react";
 
 export default function FAQPage() {
   return (
@@ -13,7 +13,7 @@ export default function FAQPage() {
             {/* SECTION 1: THE "WHY" & WISEBITES+ */}
             <section>
                 <div className="mb-8">
-                    <h3 className="font-bold text-slate-900 text-lg mb-3">Why isn't this platform free?</h3>
+                    <h3 className="font-bold text-slate-900 text-lg mb-3">Why isn't this platform completely free?</h3>
                     <p className="text-slate-600 text-sm leading-relaxed mb-4">
                         Great question. The truth is, <strong>quality data, AI, and product experience costs money.</strong> 
                     </p>
@@ -121,7 +121,50 @@ export default function FAQPage() {
 
             <div className="w-full h-px bg-slate-100"></div>
 
-            {/* SECTION 2: DATA & PRIVACY */}
+            {/* SECTION 2: MOBILE APP (NEW) */}
+            <section>
+                <div className="flex items-center gap-2 mb-6">
+                    <Smartphone className="w-5 h-5 text-indigo-600" />
+                    <h2 className="text-xl font-bold text-slate-900">Get the App</h2>
+                </div>
+
+                <div className="mb-6">
+                    <h3 className="font-bold text-slate-900 mb-2">Is there a WiseBites mobile app?</h3>
+                    <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                       Yes! You don't need to visit the App Store to get it. You can install WiseBites directly from your browser in seconds for a full native app experience.
+                    </p>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                    {/* iOS Instructions */}
+                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6">
+                        <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+                            <span>🍎</span> For iPhone (iOS)
+                        </h4>
+                        <ol className="list-decimal list-inside space-y-3 text-sm text-slate-600 leading-relaxed">
+                            <li>Tap the <strong>Share</strong> icon (square with arrow) at the bottom of Safari.</li>
+                            <li>Scroll down and tap <strong>"Add to Home Screen"</strong>.</li>
+                            <li>Tap <strong>"Add"</strong> in the top right.</li>
+                        </ol>
+                    </div>
+
+                    {/* Android Instructions */}
+                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6">
+                        <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+                            <span>🤖</span> For Android
+                        </h4>
+                        <ol className="list-decimal list-inside space-y-3 text-sm text-slate-600 leading-relaxed">
+                            <li>Tap the <strong>Menu</strong> icon (three dots) in the top right of Chrome.</li>
+                            <li>Tap <strong>"Install App"</strong> or "Add to Home Screen".</li>
+                            <li>Follow the prompt to add it to your home screen.</li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+
+            <div className="w-full h-px bg-slate-100"></div>
+
+            {/* SECTION 3: DATA & PRIVACY */}
             <section>
                 <div className="flex items-center gap-2 mb-6">
                     <Lock className="w-5 h-5 text-green-600" />

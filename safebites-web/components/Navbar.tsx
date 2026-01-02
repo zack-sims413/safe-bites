@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "../utils/supabase/client";
 import { useRouter, usePathname } from "next/navigation"; // Added usePathname
-import { LogOut, Heart, Search, User, Settings, ChevronDown, BookOpen, HelpCircle, Star } from "lucide-react";
+import { LogOut, Heart, Search, User, Settings, ChevronDown, BookOpen, HelpCircle, Star, ChevronLeft } from "lucide-react";
 
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
@@ -14,6 +14,13 @@ export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname(); // Hooks into route changes
 
+  // 1. DEFINE ROOT PAGES
+  // These are the "Main Tabs" where we want to show the Logo, NOT the back button.
+  const rootPages = ["/", "/favorites", "/profile", "/faq", "/about", "/my-reviews", "/login", "/signup"];
+  
+  // If the current path is NOT in this list (e.g. "/restaurant/123"), show the back button.
+  const showBackButton = !rootPages.includes(pathname);
+  
   // Hide Navbar on Login/Signup pages if you want (Optional, but often cleaner)
   // if (pathname === "/login" || pathname === "/signup") return null;
 
@@ -57,15 +64,27 @@ export default function Navbar() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           
-          {/* LEFT: Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="bg-green-600 rounded-lg p-1.5 group-hover:bg-green-700 transition-colors">
-              <Search className="w-5 h-5 text-white" strokeWidth={3} />
-            </div>
-            <span className="font-bold text-xl text-slate-800 tracking-tight">
-              Wise<span className="text-green-600">Bites</span>
-            </span>
-          </Link>
+          {/* LEFT: CONDITIONAL BACK BUTTON vs LOGO */}
+          <div className="flex items-center gap-2">
+            {showBackButton ? (
+              <button 
+                onClick={() => router.back()} 
+                className="flex items-center gap-1 p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <ChevronLeft className="w-6 h-6" />
+                <span className="text-sm font-semibold">Back</span>
+              </button>
+            ) : (
+              <Link href="/" className="flex items-center gap-2 group">
+                <div className="bg-green-600 rounded-lg p-1.5 group-hover:bg-green-700 transition-colors">
+                  <Search className="w-5 h-5 text-white" strokeWidth={3} />
+                </div>
+                <span className="font-bold text-xl text-slate-800 tracking-tight">
+                  Wise<span className="text-green-600">Bites</span>
+                </span>
+              </Link>
+            )}
+          </div>
 
           {/* RIGHT: Navigation */}
           <div className="flex items-center gap-3 sm:gap-6">
