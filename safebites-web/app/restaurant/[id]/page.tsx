@@ -38,6 +38,7 @@ interface CommunityReview {
   did_feel_safe: boolean;
   has_dedicated_fryer: boolean;
   is_dedicated_gluten_free: boolean;
+  is_premium?: boolean;
   image_urls?: string[] | null; // <--- NEW: Images
   profiles?: {                  // <--- NEW: Joined Profile Data
       dietary_preference: string;
@@ -267,30 +268,74 @@ export default function RestaurantDetailsPage() {
     safetyRating: number | null | undefined, 
     communityReviews: CommunityReview[]
   ) => {
-    if (!aiScore) return null;
-    if (communityReviews.length === 0 && (!revCount || revCount === 0)) return null;
+    // Default safe values
+    const validAiScore = aiScore || 0;
+    const validSafetyRating = safetyRating || 0;
+    const validRevCount = revCount || 0;
+
+    // RULE 1: STRICT NULL CHECK
+    // If no one (Community or Google) has said anything relevant, we return null.
+    if (communityReviews.length === 0 && validRevCount === 0) return null;
     
     let finalScore = 0;
     
+    // SCENARIO A: VERIFIED (Community Data Exists)
     if (communityReviews.length > 0) {
         const totalStars = communityReviews.reduce((acc, r) => acc + r.rating, 0);
         const avgCommunityRating = totalStars / communityReviews.length;
-        const unsafeReports = communityReviews.filter(r => !r.did_feel_safe).length;
-        const safeReports = communityReviews.filter(r => r.did_feel_safe).length;
+        
+        // Calculate Weighted Counts
+        let safeFree = 0;
+        let safePremium = 0;
+        let unsafeFree = 0;
+        let unsafePremium = 0;
+        let dedicatedCount = 0;
 
-        let total = aiScore * 7.0;
-        total += (avgCommunityRating * 2.0) * 3.0; 
-        total -= (unsafeReports * 15.0);
-        total += (safeReports * 2.0);
+        communityReviews.forEach(r => {
+            // Check for Dedicated Tag
+            if (r.is_dedicated_gluten_free) dedicatedCount++;
+
+            if (r.did_feel_safe) {
+                if (r.is_premium) safePremium++;
+                else safeFree++;
+            } else {
+                // Assuming explicit false means unsafe (handling nulls if necessary)
+                if (r.did_feel_safe === false) { 
+                    if (r.is_premium) unsafePremium++;
+                    else unsafeFree++;
+                }
+            }
+        });
+
+        // 1. Base Score (Max 100 before division)
+        // AI (70%) + Community Rating (30%)
+        let total = (validAiScore * 7.0) + (avgCommunityRating * 6.0); 
+
+        // 2. Trust Bonuses
+        total += (safeFree * 2.0);      // +0.2 per free safe
+        total += (safePremium * 5.0);   // +0.5 per premium safe
+        total += (dedicatedCount * 5.0);// +0.5 per dedicated tag
+
+        // 3. Safety Penalties
+        total -= (unsafeFree * 15.0);     // -1.5 per free unsafe
+        total -= (unsafePremium * 25.0);  // -2.5 per premium unsafe
+
         finalScore = total / 10.0;
+
     } else {
-        const rating = safetyRating || 0; 
-        const count = revCount || 0;
-        let total = aiScore * 8.0;
-        if (count > 3) total += (rating * 4.0);
-        else total += (rating * 2.0);
+        // SCENARIO B: COLD START (Google Only)
+        // 80% AI + 20% Google Rating
+        let total = validAiScore * 8.0;
+        
+        if (validRevCount > 3) {
+            total += (validSafetyRating * 4.0);
+        } else {
+            total += (validSafetyRating * 2.0);
+        }
         finalScore = total / 10.0;
     }
+
+    // Clamp between 1.0 and 10.0
     return Math.max(1.0, Math.min(10.0, parseFloat(finalScore.toFixed(1))));
   };
 

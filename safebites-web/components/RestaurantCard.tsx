@@ -27,38 +27,6 @@ interface Restaurant {
 }
 
 export default function RestaurantCard({ place }: { place: Restaurant }) {
-  
-  // --- UPDATED STRICT SCORE CALCULATOR ---
-  // Mirrors Index.py logic EXACTLY:
-  // 1. Strict Null: If no relevant reviews, return NULL.
-  // 2. Cold Start: 80% AI + 20% Safety Rating (Stepped by volume)
-  const calculateWiseBitesScore = (aiScore: number, safetyRating: number, reviewCount: number) => {
-    // Basic validity check
-    if (!aiScore || aiScore === 0) return null;
-    
-    // RULE 1: STRICT NULL CHECK
-    // If there are 0 relevant reviews, we cannot generate a WiseScore.
-    // (Note: In this card view, we assume 0 community reviews for the fallback calc)
-    if (!reviewCount || reviewCount === 0) {
-        return null;
-    }
-
-    // MODE B: Cold Start (Relevant Google Data ONLY)
-    // Base: AI * 8
-    let total = aiScore * 8.0;
-    
-    // Boost based on volume (Stepped Logic)
-    if (reviewCount > 3) {
-        // Established: + Rating * 4
-        total += (safetyRating * 4.0);
-    } else {
-        // New/Low Volume (1-3 reviews): + Rating * 2
-        total += (safetyRating * 2.0);
-    }
-    
-    const final = total / 10.0;
-    return Math.max(1.0, Math.min(10.0, parseFloat(final.toFixed(1))));
-  };
 
   // --- STATE: Data ---
   const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
@@ -68,19 +36,7 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
   const [hasFetched, setHasFetched] = useState(place.is_cached || false);
 
   // --- SCORE INITIALIZATION ---
-  const [wiseBitesScore, setWiseBitesScore] = useState<number | null>(() => {
-    // 1. Priority: DB Score
-    if (place.wise_bites_score && place.wise_bites_score > 0) {
-        return place.wise_bites_score;
-    }
-    // 2. Fallback: Local Calc (New Logic)
-    // UPDATE: Must pass all 3 arguments now!
-    return calculateWiseBitesScore(
-        place.ai_safety_score || 0,
-        place.average_safety_rating || 0, // Pass average Safety Rating from relevant reviews
-        place.relevant_count || 0  // Pass Google Count
-    );
-  });
+  const [wiseBitesScore, setWiseBitesScore] = useState<number | null>(place.wise_bites_score ?? null);
 
   // --- STATE: User Interaction ---
   const [isFavorite, setIsFavorite] = useState(false);
@@ -192,15 +148,9 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
           setSummary(data.ai_summary);
           setRelevantCount(revCount);
           
-          // Use the score returned by the API if available, otherwise calculate locally
+          // Just use the server's score.
           if (data.wise_bites_score && data.wise_bites_score > 0) {
             setWiseBitesScore(data.wise_bites_score);
-          } else {
-            setWiseBitesScore(calculateWiseBitesScore(
-                aiScore, 
-                safetyRating,        // Pass Safety Rating
-                revCount // Pass Review Count
-            ));
           }
           
           setLoading(false);

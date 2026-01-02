@@ -199,50 +199,88 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         print(f"Groq AI Error: {e}")
         return 0, "AI Analysis currently unavailable."
 
-def calculate_wisebites_score(ai_score, safety_rating, relevant_rev_count, wb_avg_rating, wb_safe_count, wb_unsafe_count):
+def calculate_wisebites_score(
+    ai_score, 
+    safety_rating, 
+    google_relevant_count, 
+    wb_avg_rating, 
+    wb_safe_free_count, 
+    wb_safe_premium_count, 
+    wb_dedicated_count, 
+    wb_unsafe_free_count, 
+    wb_unsafe_premium_count
+):
     """
-    Hybrid Scoring Logic (Mirrors SQL):
-    - IF WiseBites reviews exist: 70% AI + 30% Community + Bonuses
-    - ELSE: 80% AI + 20% Google Rating
+    Hybrid Scoring Logic (Mirrors SQL Trust-Based Score):
+    - IF WiseBites reviews exist: 
+        Base: 70% AI + 30% User Rating (weighted x6)
+        Bonuses: +2 (Safe Free), +5 (Safe Premium), +5 (Dedicated Tag)
+        Penalties: -15 (Unsafe Free), -25 (Unsafe Premium)
+    - ELSE: 
+        80% AI + Google Rating weight
     """
-    if ai_score is None: ai_score = 0
-    if safety_rating is None: safety_rating = 0
-    if relevant_rev_count is None: relevant_rev_count = 0
+    # Handle None inputs safely
+    ai_score = float(ai_score) if ai_score else 0.0
+    safety_rating = float(safety_rating) if safety_rating else 0.0
+    google_relevant_count = int(google_relevant_count) if google_relevant_count else 0
+    wb_avg_rating = float(wb_avg_rating) if wb_avg_rating else 0.0
     
-    wb_review_count = wb_safe_count + wb_unsafe_count
+    # Calculate Total WB Reviews
+    total_wb_reviews = (
+        wb_safe_free_count + 
+        wb_safe_premium_count + 
+        wb_unsafe_free_count + 
+        wb_unsafe_premium_count
+    )
 
     # RULE 1: STRICT NULL CHECK
-    # If no one (Community or Google) has said anything relevant, we return None.
-    if wb_review_count == 0 and relevant_rev_count == 0:
+    # If no data exists at all (Community or Google), return None
+    if total_wb_reviews == 0 and google_relevant_count == 0:
         return None
     
     final_score = 0.0
 
-    if wb_review_count > 0:
-        # MODE A: VERIFIED (Community Data)
-        total = float(ai_score) * 7
-        total += (float(wb_avg_rating) * 2) * 3
-        # Penalties/Bonuses
-        total -= (wb_unsafe_count * 15)
-        total += (wb_safe_count * 2)
+    # SCENARIO A: VERIFIED (Community Data Exists)
+    if total_wb_reviews > 0:
+        # 1. Base Score (Max ~100 range before division)
+        # AI (0-10) * 7  -> Max 70
+        # Rating (0-5) * 6 -> Max 30
+        base_score = (ai_score * 7) + (wb_avg_rating * 6)
+
+        # 2. Trust Bonuses
+        bonuses = (wb_safe_free_count * 2) + \
+                  (wb_safe_premium_count * 5) + \
+                  (wb_dedicated_count * 5)
+
+        # 3. Safety Penalties
+        penalties = (wb_unsafe_free_count * 15) + \
+                    (wb_unsafe_premium_count * 25)
+
+        total = base_score + bonuses - penalties
         final_score = total / 10.0
+
+    # SCENARIO B: COLD START (Google Data Only)
     else:
-        # MODE B: COLD START (Relevant Google Data ONLY)
-        # We only get here if relevant_rev_count > 0 due to Rule 1.
+        # Base: AI * 8
+        total = ai_score * 8
         
-        total = float(ai_score) * 8
-        
-        # Established (>3 relevant reviews): Safety Rating * 4
-        if relevant_rev_count > 3:
-            total += (float(safety_rating) * 4)
-        # New (1-3 relevant reviews): Safety Rating * 2
+        # Add Google Rating Weight
+        # Established (>3 reviews): Safety Rating * 4
+        # New (1-3 reviews): Safety Rating * 2
+        if google_relevant_count > 3:
+            total += (safety_rating * 4)
         else:
-            total += (float(safety_rating) * 2)
+            total += (safety_rating * 2)
             
         final_score = total / 10.0
     
-    # Clamp
-    return max(1.0, min(round(final_score, 1), 10.0))
+    # Clamp between 1.0 and 10.0
+    if final_score > 10.0:
+        final_score = 10.0
+    if final_score < 1.0:
+        final_score = 1.0
+
+    return round(final_score, 1)
 
 @lru_cache(maxsize=100) 
 def fetch_google_search(query: str, location: str, lat: float = None, lng: float = None):
