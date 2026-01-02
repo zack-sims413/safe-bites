@@ -619,8 +619,11 @@ def get_reviews(req: ReviewRequest):
     def format_community_reviews(place_id):
         """Fetches and formats WiseBites reviews for this place."""
         formatted = []
-        wb_safe = 0
-        wb_unsafe = 0
+        wb_safe_free = 0
+        wb_safe_premium = 0
+        wb_unsafe_free = 0
+        wb_unsafe_premium = 0
+        wb_dedicated_count = 0
         wb_avg = 0
         total_count = 0
         
@@ -643,19 +646,34 @@ def get_reviews(req: ReviewRequest):
                 wb_unsafe = sum(1 for r in wb_data if r.get('did_feel_safe') is False)
 
                 for r in wb_data:
-                    safety_tag = "SAFE" if r.get('did_feel_safe') else "UNSAFE"
-                    comment = r.get('comment') or "No specific comment."
-
-                    # Extract User Sensitivity
-                    # Supabase returns the joined table as a nested dictionary
+                    # Extract Profile Data safely
                     user_profile = r.get('profiles') or {}
+                    is_premium = user_profile.get('is_premium', False)
                     sensitivity = user_profile.get('dietary_preference', 'Unknown')
-                    user_is_premium = user_profile.get('is_premium', False)
+                    
+                    is_safe = r.get('did_feel_safe')
+                    is_dedicated = r.get('is_dedicated_gluten_free', False)
 
-                    # Add Badge info if present
-                    badge_text = ""
-                    if r.get('is_dedicated_gluten_free'):
-                        badge_text = " [DEDICATED GF]"
+                    # 1. Count Dedicated Tags
+                    if is_dedicated:
+                        wb_dedicated_count += 1
+
+                    # 2. Count Safe/Unsafe by Tier
+                    if is_safe is True:
+                        if is_premium:
+                            wb_safe_premium += 1
+                        else:
+                            wb_safe_free += 1
+                    elif is_safe is False:
+                        if is_premium:
+                            wb_unsafe_premium += 1
+                        else:
+                            wb_unsafe_free += 1
+
+                    # 3. Format for display
+                    safety_tag = "SAFE" if is_safe else "UNSAFE"
+                    comment = r.get('comment') or "No specific comment."
+                    badge_text = " [DEDICATED GF]" if is_dedicated else ""
 
                     formatted.append({
                         "source": "WiseBites Community",
@@ -665,13 +683,13 @@ def get_reviews(req: ReviewRequest):
                         "user_sensitivity": sensitivity,
                         "date": r.get('created_at', "")[:10],
                         "relevant": True,
-                        "is_dedicated_gluten_free": r.get('is_dedicated_gluten_free', False),
-                        "is_premium": user_is_premium
+                        "is_dedicated_gluten_free": is_dedicated,
+                        "is_premium": is_premium
                     })
         except Exception as e:
             print(f"Error fetching community reviews: {e}")
             
-        return formatted, wb_avg, wb_safe, wb_unsafe, total_count
+        return formatted, wb_avg, wb_safe_free, wb_safe_premium, wb_dedicated_count, wb_unsafe_free, wb_unsafe_premium, total_count
     
     # 1. CHECK CACHE (Skip if force_refresh is True)
     if not req.force_refresh:
@@ -732,7 +750,7 @@ def get_reviews(req: ReviewRequest):
             "relevant": True
         })
 
-    wb_reviews, wb_avg, wb_safe, wb_unsafe, wb_count = format_community_reviews(req.place_id)
+    wb_reviews, wb_avg, wb_safe_free, wb_safe_prem, wb_dedi, wb_unsafe_free, wb_unsafe_prem, wb_count = format_community_reviews(req.place_id)
 
     # Calculate Google-only Stats
     avg_safety_rating = 0
@@ -750,8 +768,11 @@ def get_reviews(req: ReviewRequest):
         avg_safety_rating, 
         google_relevant_count,    
         wb_avg, 
-        wb_safe, 
-        wb_unsafe
+        wb_safe_free,   
+        wb_safe_prem,   
+        wb_dedi,        
+        wb_unsafe_free, 
+        wb_unsafe_prem  
     )
 
     # 4. SAVE TO SUPABASE
