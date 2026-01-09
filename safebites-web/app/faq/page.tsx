@@ -18,7 +18,7 @@ export default function FAQPage() {
                         Great question. The truth is, <strong>quality data, AI, and product experience costs money.</strong> 
                     </p>
                     <p className="text-slate-600 text-sm leading-relaxed">
-                        Every time you search and we analyze thousands of reviews to flag relevant reviws, we pay server and processing costs. To ensure WiseBites remains fast, accurate, and ad-free, we rely on subscriber support. This allows us to keep the platform running and constantly improve our detection algorithms without selling your data to advertisers.
+                        Every time you search and we analyze thousands of reviews to flag relevant reviws, we pay server and processing costs. To ensure WiseBites remains fast, accurate, and ad-free, we rely on subscriber support. This allows us to keep the platform running and constantly improve our detection algorithms, while being committed to an ad-free experience.
                     </p><br></br>
                     <p className="text-slate-600 text-sm leading-relaxed">
                         Additonally, to ensure quality reviews and prevent spam, we let reviews from paid subscribers carry more weight in our analysis. This creates a positive feedback loop where supporting the platform directly improves the quality of data for everyone.
@@ -36,7 +36,7 @@ export default function FAQPage() {
                     <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
 
                     <div className="relative z-10">
-                        <h3 className="text-2xl font-black mb-4">Unlock the full power of safe dining.</h3>
+                        <h3 className="text-2xl font-black mb-4">Unlock the full power of WiseBites.</h3>
                         <p className="text-slate-300 mb-8 leading-relaxed max-w-lg">
                             Support the mission and get access to advanced planning tools designed for frequent travelers and foodies.
                         </p>
@@ -86,7 +86,7 @@ export default function FAQPage() {
                             Never hit a limit
                         </h4>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                            Free users get 3 detailed AI safety scans per day. Premium users get <strong>unlimited access</strong>. Perfect for heavy research days when planning a vacation or a night out in a new city.
+                            Free users get 3 detailed AI-powered queries per day. Premium users get <strong>unlimited access</strong>. Perfect for heavy research days when planning a vacation, a night out in a new city, or discovering gems at home.
                         </p>
                     </div>
                     <div>
@@ -183,16 +183,16 @@ export default function FAQPage() {
                     <div>
                         <h3 className="font-bold text-slate-900 mb-2">Why do you need to use reviews from Google?</h3>
                         <p className="text-slate-600 text-sm leading-relaxed">
-                            The truth is, there really aren't many places with a large number of gluten reviews that are recent & relevant. Additionally, with our platform being new, we do not have existing user data we can rely on that. 
+                            The truth is, there really aren't many places with a large number of gluten reviews that are recent & relevant. Additionally, with our platform being new, we do not have existing user data we can rely on at scale. 
                             By leveraging existing Google reviews, it helps give us some data and information on restaurants. That being said, we place a more significant weight on reviews submitted on the WiseBites platform, because we
-                            have a review form dedicated to answering critical questions or celiac and gluten-intolerant individuals. 
+                            have a review form dedicated to answering critical questions or celiac and gluten-intolerant individuals. <br /><br /><strong>The goal</strong> is to grow our own database of reviews over time so that we can rely less on third-party sources.
                         </p>
                     </div>
 
                     <div>
                         <h3 className="font-bold text-slate-900 mb-2">How do you use my data?</h3>
                         <p className="text-slate-600 text-sm leading-relaxed">
-                            We do not sell your data. Your dietary preferences and search history are used strictly to personalize your search results (e.g., hiding shared fryers if you are Celiac) and to improve the accuracy of our AI model.
+                            We do not sell your data. Your dietary preferences and search history are used strictly to power your search filters (e.g., hiding shared fryers if you are Celiac) and to improve the accuracy of our AI model.
                         </p>
                     </div>
                 </div>

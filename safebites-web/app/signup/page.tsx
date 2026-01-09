@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "../../utils/supabase/client";
 import { Loader2, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck, Users, Search, Mail, LogOut } from "lucide-react"; // Added LogOut icon
 import Link from "next/link";
+import GoogleSignInButton from "../../components/GoogleSignInButton";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -247,6 +248,19 @@ export default function SignUpPage() {
                     >
                         {loading ? <Loader2 className="animate-spin" /> : <>Get Started <ArrowRight className="w-4 h-4" /></>}
                     </button>
+
+                    {/* --- 2. ADDED GOOGLE BUTTON HERE --- */}
+                    <div className="relative my-6">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-slate-200"></div>
+                        </div>
+                        <div className="relative flex justify-center text-sm">
+                            <span className="px-2 bg-white text-slate-500">Or continue with</span>
+                        </div>
+                    </div>
+
+                    <GoogleSignInButton nextUrl="/profile" />
+                    {/* ----------------------------------- */}
 
                     <p className="text-center text-slate-500 text-sm">
                         Already have an account? <Link href="/login" className="text-green-600 font-bold hover:underline">Log in</Link>

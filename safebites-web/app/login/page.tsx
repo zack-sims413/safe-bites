@@ -5,6 +5,7 @@ import { createClient } from "../../utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
+import GoogleSignInButton from "../../components/GoogleSignInButton";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -112,6 +113,23 @@ export default function LoginPage() {
             {loading ? <Loader2 className="animate-spin" /> : "Sign In"}
           </button>
         </form>
+
+        {/* --- 2. GOOGLE BUTTON SECTION HERE --- */}
+        <div className="mt-6">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-slate-500">Or continue with</span>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <GoogleSignInButton />
+          </div>
+        </div>
+        {/* --------------------------------------------- */}
 
         <div className="mt-6 text-center text-sm text-slate-500">
           Don't have an account?{" "}

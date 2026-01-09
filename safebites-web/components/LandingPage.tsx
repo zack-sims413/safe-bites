@@ -26,12 +26,12 @@ export default function LandingPage() {
           </span>
         </h1>
         <p className="text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-          WiseBites uses AI to analyze thousands of reviews for cross-contamination safety, so you can find celiac-friendly spots without the guesswork.
+          WiseBites uses AI to analyze thousands of reviews, so you can find celiac-friendly spots without the guesswork.
         </p>
         
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/login" className="w-full sm:w-auto px-8 py-4 rounded-full bg-green-600 text-white font-bold text-lg hover:bg-green-700 hover:scale-105 transition-all shadow-lg shadow-green-200 flex items-center justify-center gap-2">
-                Find Safe Food <ArrowRight className="w-5 h-5" />
+                Start Exploring <ArrowRight className="w-5 h-5" />
             </Link>
         </div>
       </header>
@@ -53,7 +53,7 @@ export default function LandingPage() {
                 <Feature 
                     icon={<Star className="w-8 h-8 text-amber-500" />}
                     title="Community Powered"
-                    desc="Real reports from fellow Celiacs carry more weight in our safety scores."
+                    desc="Real reports from fellow Celiacs carry more weight in our WiseBites scores."
                 />
             </div>
         </div>

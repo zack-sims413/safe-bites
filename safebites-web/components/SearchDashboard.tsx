@@ -39,14 +39,37 @@ function HomeContent() {
   const [hasSearched, setHasSearched] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
-  // --- AUTH CHECK ---
+  // Checking profile state to determine if we need to prompt for more info
+  const [checkingProfile, setCheckingProfile] = useState(true);
+
+  // --- AUTH & PROFILE CHECK (TRAFFIC COP) ---
   useEffect(() => {
-    const checkUser = async () => {
+    const checkUserAndProfile = async () => {
+      // A. Get Auth User
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+
+      if (user) {
+        // B. Fetch Profile Data (Dietary Prefs)
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('dietary_preference')
+            .eq('id', user.id)
+            .single();
+        
+        // C. TRAFFIC COP CHECK
+        // If they are a Google User who just signed up, this will be null.
+        if (!profile?.dietary_preference) {
+            // REDIRECT to profile to finish setup
+            router.push('/profile?alert=setup_needed');
+            return; // Stop execution here so we don't turn off loading
+        }
+      }
+      // D. All good? Let them in.
+      setCheckingProfile(false);
     };
-    checkUser();
-  }, [supabase]);
+    checkUserAndProfile();
+  }, [supabase, router]);
 
   // --- SEARCH FUNCTION ---
   const performSearch = async (searchQuery: string, searchLoc: string) => {
@@ -111,6 +134,17 @@ function HomeContent() {
     if (location) params.set("loc", location);
     router.push(`/?${params.toString()}`);
   };
+
+  // --- RENDER ---
+
+  // 2. BLOCK RENDER UNTIL PROFILE CHECKED
+  if (checkingProfile) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+        </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">

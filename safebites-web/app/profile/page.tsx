@@ -2,16 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "../../utils/supabase/client";
-import { Loader2, CheckCircle2, Save } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Loader2, CheckCircle2, Save, AlertTriangle, Search, ArrowRight } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 export default function ProfilePage() {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // check if user is signing in for the first time
+  const isSetupMode = searchParams.get("alert") === "setup_needed";
 
   // Form State
   const [fullName, setFullName] = useState("");
@@ -49,20 +54,27 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    // Use upsert() instead of update()
+    // This creates the row if it doesn't exist (Google Users)
+    // or updates it if it does exist (Email Users).
     const { error } = await supabase
       .from("profiles")
-      .update({
+      .upsert({
+        id: user.id, // <--- CRITICAL: You must include the ID here for upsert
         full_name: fullName,
         birthday: birthday,
         dietary_preference: preference,
         updated_at: new Date().toISOString()
-      })
-      .eq("id", user.id);
+      });
 
     setSaving(false);
     if (!error) {
-      setMessage("Profile updated successfully!");
-      setTimeout(() => setMessage(null), 3000);
+      setMessage("Profile updated successfully! Have fun searching!");
+      // We do NOT clear the message automatically anymore, 
+      // so the "Start Searching" button stays visible.
+      router.refresh(); 
+    } else {
+      console.error(error);
     }
   };
 
@@ -79,13 +91,42 @@ export default function ProfilePage() {
         <div className="max-w-xl mx-auto px-4 py-12">
             
             {/* HEADER SECTION */}
-            <h1 className="text-3xl font-black text-black mb-2">Profile Settings</h1>
-            <p className="text-slate-700 font-medium mb-8">Manage your account details and dietary preferences.</p>
+            <div className="mb-8">
+                <h1 className="text-3xl font-black text-slate-900 mb-2">Profile Settings</h1>
+                <p className="text-slate-600 font-medium">Manage your account details and dietary needs.</p>
+            </div>
 
+            {/* --- IMPROVEMENT 1: The "Why am I here?" Alert --- */}
+            {/* Show this if they haven't saved a preference yet OR if they were redirected */}
+            {(!preference || isSetupMode) && !message && (
+                <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3 animate-in fade-in slide-in-from-top-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                        <h3 className="font-bold text-amber-900 text-sm">Action Required</h3>
+                        <p className="text-sm text-amber-800 mt-1 leading-relaxed">
+                            To ensure the best product experience, we need to know your dietary needs before you can search for restaurants.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {/* --- IMPROVEMENT 2: The Success Action --- */}
             {message && (
-                <div className="mb-6 p-4 bg-green-50 text-green-900 border border-green-200 rounded-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 font-medium">
-                    <CheckCircle2 className="w-5 h-5 text-green-700" />
-                    {message}
+                <div className="mb-8 p-5 bg-green-50 border border-green-200 rounded-xl animate-in fade-in slide-in-from-top-2">
+                    <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle2 className="w-5 h-5 text-green-700" />
+                        <span className="font-bold text-green-900">{message}</span>
+                    </div>
+                    
+                    {/* The "Go Search" Button */}
+                    <Link 
+                        href="/"
+                        className="flex items-center justify-center gap-2 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-all shadow-sm"
+                    >
+                        <Search className="w-4 h-4" />
+                        Start Searching Now
+                        <ArrowRight className="w-4 h-4" />
+                    </Link>
                 </div>
             )}
 
