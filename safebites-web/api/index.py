@@ -353,55 +353,43 @@ def fetch_serpapi_reviews(place_id: str):
         print(f"SerpApi Exception: {str(e)}")
         return []
     
-### keep track of user searches for free tier
 def check_and_update_limit(user_id: str):
     """
     Returns True if user is allowed to search.
     Returns False if they hit the limit.
-    STRICT MODE: Fails if profile is missing (does not auto-create).
+    Tracks usage for ALL users (Free & Premium).
     """
-    
     if not user_id: return True 
     
     try:
-        # 1. Fetch Profile (Safe Method)
-        # We use .limit(1) to always get a list back (e.g. [] or [{data}]).
-        # This avoids the .single() crash and .maybe_single() ambiguity.
+        # 1. Fetch Profile
         resp = supabase.table("profiles").select("is_premium, daily_search_count, last_search_date").eq("id", user_id).limit(1).execute()
-        print(resp)
-        # Check if we got data
+        
         results = resp.data
         if not results:
-            # STRICT HANDLING: If no profile exists, log it and BLOCK the search.
             print(f"⛔ Strict Mode: User {user_id} has no profile row. Search blocked.")
             return False 
 
         profile = results[0]
-
-        # --- NORMAL GATE LOGIC ---
         is_premium = profile.get("is_premium", False)
         
-        # Premium Users bypass all limits
-        if is_premium:
-            return True
-            
+        # 2. Calculate Dates & Counts
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         last_date = profile.get("last_search_date")
         current_count = profile.get("daily_search_count", 0)
 
-        # Reset Counter if it's a new day
+        # Check if it is a new day
         if last_date != today_str:
-            current_count = 0
-            supabase.table("profiles").update({
-                "daily_search_count": 0,
-                "last_search_date": today_str
-            }).eq("id", user_id).execute()
+            current_count = 0 # Reset logic locally (we will save it below)
 
-        # Check Limit
-        if current_count >= FREE_DAILY_LIMIT:
+        # 3. CHECK LIMIT (Free Users Only)
+        # If it's a new day (count 0), they are safe. 
+        # If it's same day and they hit limit, block them.
+        if not is_premium and current_count >= FREE_DAILY_LIMIT:
             return False
 
-        # Increment Count
+        # 4. INCREMENT & UPDATE (For Everyone)
+        # This handles the increment AND the daily reset in a single DB call
         supabase.table("profiles").update({
             "daily_search_count": current_count + 1,
             "last_search_date": today_str 
@@ -411,7 +399,6 @@ def check_and_update_limit(user_id: str):
         
     except Exception as e:
         print(f"Limit Check Error: {e}")
-        # In strict mode, failing open (True) is usually safer for UX during bugs
         return True
 
 @app.post("/api/search")
