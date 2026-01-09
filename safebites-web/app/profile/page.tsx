@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { createClient } from "../../utils/supabase/client";
 import { Loader2, CheckCircle2, Save, AlertTriangle, Search, ArrowRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-export default function ProfilePage() {
+// 1. Rename the main logic to "ProfileContent"
+function ProfileContent() {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -14,8 +15,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  // check if user is signing in for the first time
+  
+  // Now this is safe because we are inside Suspense
   const isSetupMode = searchParams.get("alert") === "setup_needed";
 
   // Form State
@@ -54,13 +55,10 @@ export default function ProfilePage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Use upsert() instead of update()
-    // This creates the row if it doesn't exist (Google Users)
-    // or updates it if it does exist (Email Users).
     const { error } = await supabase
       .from("profiles")
       .upsert({
-        id: user.id, // <--- CRITICAL: You must include the ID here for upsert
+        id: user.id,
         full_name: fullName,
         birthday: birthday,
         dietary_preference: preference,
@@ -68,10 +66,9 @@ export default function ProfilePage() {
       });
 
     setSaving(false);
+    
     if (!error) {
-      setMessage("Profile updated successfully! Have fun searching!");
-      // We do NOT clear the message automatically anymore, 
-      // so the "Start Searching" button stays visible.
+      setMessage("Profile updated successfully! You're ready to eat.");
       router.refresh(); 
     } else {
       console.error(error);
@@ -79,25 +76,21 @@ export default function ProfilePage() {
   };
 
   if (loading) return (
-    // FIX 1: Ensure loading state also has a white background
     <div className="min-h-screen flex items-center justify-center bg-white">
         <Loader2 className="animate-spin text-slate-400" />
     </div>
   );
 
   return (
-    // FIX 2: FORCE WHITE BACKGROUND (min-h-screen bg-white)
     <div className="min-h-screen bg-white">
         <div className="max-w-xl mx-auto px-4 py-12">
             
-            {/* HEADER SECTION */}
             <div className="mb-8">
                 <h1 className="text-3xl font-black text-slate-900 mb-2">Profile Settings</h1>
                 <p className="text-slate-600 font-medium">Manage your account details and dietary needs.</p>
             </div>
 
-            {/* --- IMPROVEMENT 1: The "Why am I here?" Alert --- */}
-            {/* Show this if they haven't saved a preference yet OR if they were redirected */}
+            {/* Alert: Action Required */}
             {(!preference || isSetupMode) && !message && (
                 <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3 animate-in fade-in slide-in-from-top-2">
                     <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -110,7 +103,7 @@ export default function ProfilePage() {
                 </div>
             )}
 
-            {/* --- IMPROVEMENT 2: The Success Action --- */}
+            {/* Success Message */}
             {message && (
                 <div className="mb-8 p-5 bg-green-50 border border-green-200 rounded-xl animate-in fade-in slide-in-from-top-2">
                     <div className="flex items-center gap-2 mb-3">
@@ -118,7 +111,6 @@ export default function ProfilePage() {
                         <span className="font-bold text-green-900">{message}</span>
                     </div>
                     
-                    {/* The "Go Search" Button */}
                     <Link 
                         href="/"
                         className="flex items-center justify-center gap-2 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-all shadow-sm"
@@ -131,31 +123,28 @@ export default function ProfilePage() {
             )}
 
             <form onSubmit={handleUpdate} className="space-y-8">
-                
-                {/* SECTION 1: Personal Info */}
                 <div className="space-y-4">
-                    <h2 className="font-black text-lg text-black border-b border-slate-200 pb-2">Personal Information</h2>
+                    <h2 className="font-black text-lg text-slate-900 border-b border-slate-100 pb-2">Personal Information</h2>
                     <div>
-                        <label className="block text-sm font-bold text-slate-800 mb-1">Full Name</label>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Full Name</label>
                         <input 
                             required type="text" 
                             value={fullName} onChange={(e) => setFullName(e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 bg-white text-black placeholder:text-slate-400 focus:border-green-600 focus:ring-0 outline-none transition-all font-medium"
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-green-600 focus:ring-0 outline-none transition-all font-medium"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-800 mb-1">Birthday</label>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Birthday</label>
                         <input 
                             required type="date" 
                             value={birthday} onChange={(e) => setBirthday(e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 bg-white text-black outline-none focus:border-green-600 focus:ring-0 font-medium"
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 bg-white text-slate-900 outline-none focus:border-green-600 focus:ring-0 font-medium"
                         />
                     </div>
                 </div>
 
-                {/* SECTION 2: Preferences */}
                 <div className="space-y-4">
-                    <h2 className="font-black text-lg text-black border-b border-slate-200 pb-2">Dietary Needs</h2>
+                    <h2 className="font-black text-lg text-slate-900 border-b border-slate-100 pb-2">Dietary Needs</h2>
                     <div className="grid grid-cols-1 gap-3">
                         {[
                             { 
@@ -191,14 +180,14 @@ export default function ProfilePage() {
                                 className={`relative p-4 rounded-xl border-2 text-left transition-all ${
                                     preference === opt.id 
                                     ? "border-green-600 bg-green-50 ring-1 ring-green-600" 
-                                    : "border-slate-200 hover:border-slate-400 bg-white"
+                                    : "border-slate-200 hover:border-slate-300 bg-white"
                                 }`}
                             >
                                 <div className="flex justify-between items-start mb-1">
-                                    <span className={`font-bold ${preference === opt.id ? "text-green-900" : "text-black"}`}>{opt.label}</span>
+                                    <span className={`font-bold ${preference === opt.id ? "text-green-900" : "text-slate-900"}`}>{opt.label}</span>
                                     {preference === opt.id && <CheckCircle2 className="w-5 h-5 text-green-700" />}
                                 </div>
-                                <p className={`text-xs font-medium ${preference === opt.id ? "text-green-800" : "text-slate-600"}`}>{opt.desc}</p>
+                                <p className={`text-xs font-medium ${preference === opt.id ? "text-green-800" : "text-slate-500"}`}>{opt.desc}</p>
                             </button>
                         ))}
                     </div>
@@ -207,13 +196,25 @@ export default function ProfilePage() {
                 <button 
                     type="submit" 
                     disabled={saving}
-                    className="w-full bg-black text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+                    className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
                 >
                     {saving ? <Loader2 className="animate-spin" /> : <><Save className="w-4 h-4" /> Save Changes</>}
                 </button>
-
             </form>
         </div>
     </div>
+  );
+}
+
+// 2. The Exported Wrapper
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <Loader2 className="animate-spin text-slate-400" />
+      </div>
+    }>
+      <ProfileContent />
+    </Suspense>
   );
 }

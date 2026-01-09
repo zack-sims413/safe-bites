@@ -118,8 +118,8 @@ export default function RestaurantDetailsPage() {
     if (!place) return;
     
     const shareData = {
-        title: `Is ${place.name} Celiac Safe?`,
-        text: `Check out the gluten-free safety rating for ${place.name} on WiseBites.`,
+        title: `${place.name} WiseBites Overview`,
+        text: `Check out the reviews & analysis for ${place.name} on WiseBites.`,
         url: window.location.href
     };
 
@@ -428,7 +428,7 @@ export default function RestaurantDetailsPage() {
                         <span className="text-xs font-bold uppercase tracking-wider">WiseScore</span>
                     </div>
                     <div className="text-4xl font-black">{calculatedScore || "--"}</div>
-                    <p className="text-xs mt-2 opacity-75">Out of 10.0 based on safety analysis</p>
+                    <p className="text-xs mt-2 opacity-75">Out of 10.0 review consistency and reported experiences</p>
                 </div>
                 <div className="mt-6 pt-4 border-t border-black/10 flex flex-col gap-1.5 text-sm opacity-80">
                     <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4" /><span className="font-medium">{totalReviews} Relevant Reviews</span></div>
@@ -438,7 +438,7 @@ export default function RestaurantDetailsPage() {
 
             <div className="md:col-span-2 p-6 rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col">
                 <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> AI Safety Summary
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> AI Summary
                 </h3>
                 <p className="text-slate-600 leading-relaxed flex-grow">{place.ai_summary || "No detailed analysis available yet."}</p>
                 <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">

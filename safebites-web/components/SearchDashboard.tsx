@@ -161,7 +161,7 @@ function HomeContent() {
              Wise<span className="text-green-400">Bites</span> 🌾
            </h1>
            <p className="text-lg text-slate-300 max-w-lg mx-auto mb-8 leading-relaxed">
-             Dine out with more confidence. We use AI to analyze thousands of reviews to find the most celiac-friendly spots near you.
+             WiseBites uses AI to summarize gluten-related experiences from restaurant reviews, so you don’t have to read them all.
            </p>
 
            {/* SEARCH BAR */}

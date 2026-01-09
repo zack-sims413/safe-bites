@@ -18,10 +18,10 @@ export default function FAQPage() {
                         Great question. The truth is, <strong>quality data, AI, and product experience costs money.</strong> 
                     </p>
                     <p className="text-slate-600 text-sm leading-relaxed">
-                        Every time you search and we analyze thousands of reviews to flag relevant reviws, we pay server and processing costs. To ensure WiseBites remains fast, accurate, and ad-free, we rely on subscriber support. This allows us to keep the platform running and constantly improve our detection algorithms, while being committed to an ad-free experience.
+                        Every time you search, WiseBites analyzes large volumes of restaurant reviews to surface gluten-related insights. That processing requires ongoing infrastructure and compute costs. To ensure WiseBites remains fast, accurate, and ad-free, we rely on subscriber support. This allows us to keep the platform running and constantly improve our detection algorithms, while being committed to an ad-free experience.
                     </p><br></br>
                     <p className="text-slate-600 text-sm leading-relaxed">
-                        Additonally, to ensure quality reviews and prevent spam, we let reviews from paid subscribers carry more weight in our analysis. This creates a positive feedback loop where supporting the platform directly improves the quality of data for everyone.
+                        Reviews from paid subscribers are weighted more heavily because they come from engaged users completing a structured review form focused on gluten-related experiences. This helps improve overall data quality and reduce spam. By supporting the platform directly, you are improving the quality of data for everyone.
                     </p>
                 </div>
 
@@ -36,9 +36,9 @@ export default function FAQPage() {
                     <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
 
                     <div className="relative z-10">
-                        <h3 className="text-2xl font-black mb-4">Unlock the full power of WiseBites.</h3>
+                        <h3 className="text-2xl font-black mb-4">Go deeper with WiseBites+.</h3>
                         <p className="text-slate-300 mb-8 leading-relaxed max-w-lg">
-                            Support the mission and get access to advanced planning tools designed for frequent travelers and foodies.
+                            If WiseBites has been helpful, WiseBites+ gives you more flexibility, deeper filtering, and unlimited ways to organize places that work for you.
                         </p>
                         
                         <div className="grid sm:grid-cols-2 gap-8 mb-8">
@@ -47,19 +47,19 @@ export default function FAQPage() {
                                     <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
                                         <Infinity className="w-4 h-4 text-green-400" />
                                     </div>
-                                    <span className="font-bold text-sm">Unlimited AI Searches</span>
+                                    <span className="font-bold text-sm">Unlimited AI-Powered Searches</span>
                                 </li>
                                 <li className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
                                         <Filter className="w-4 h-4 text-blue-400" />
                                     </div>
-                                    <span className="font-bold text-sm">Dedicated Gluten Filters</span>
+                                    <span className="font-bold text-sm">Gluten-Focused Filters</span>
                                 </li>
                                 <li className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
                                         <Database className="w-4 h-4 text-amber-400" />
                                     </div>
-                                    <span className="font-bold text-sm">Unlimited "Saved Places"</span>
+                                    <span className="font-bold text-sm">Unlimited custom lists of saved restaurants</span>
                                 </li>
                             </ul>
                             
@@ -95,7 +95,7 @@ export default function FAQPage() {
                             Filter by "Gluten Needs"
                         </h4>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                            Stop scrolling. WiseBites+ lets you toggle filters like <strong>"Dedicated Fryer Only"</strong> or <strong>"100% GF Kitchen"</strong> to instantly remove risky options from your search results.
+                            Stop scrolling. WiseBites+ lets you toggle filters like <strong>"Dedicated Fryer Only"</strong> or <strong>"100% GF Kitchen"</strong> to instantly narrow your results based on commonly reported gluten-related concerns.
                         </p>
                     </div>
                     <div>
@@ -176,7 +176,7 @@ export default function FAQPage() {
                         <h3 className="font-bold text-slate-900 mb-2">Where does the review data come from?</h3>
                         <p className="text-slate-600 text-sm leading-relaxed">
                             We aggregate data from two main sources: broad public datasets (like Google Reviews) and our own proprietary WiseBites community reviews. 
-                            While Google gives us volume, we prioritize and heavily weight reviews left directly on WiseBites, as these come from verified community members specifically assessing gluten safety. Our goal is to grow our own database to become the single source of truth for the community.
+                            While Google gives us volume, we prioritize and heavily weight reviews left directly on WiseBites, as these come from verified community members specifically assessing gluten-related handling, preparation practices, and reported experiences. Our goal is to grow our own database to become the single source of truth for the community.
                         </p>
                     </div>
 
