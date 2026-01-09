@@ -41,6 +41,7 @@ function HomeContent() {
 
   // Checking profile state to determine if we need to prompt for more info
   const [checkingProfile, setCheckingProfile] = useState(true);
+  const [limitReached, setLimitReached] = useState(false);
 
   // --- AUTH & PROFILE CHECK (TRAFFIC COP) ---
   useEffect(() => {
@@ -78,6 +79,7 @@ function HomeContent() {
     setLoading(true);
     setError("");
     setHasSearched(true);
+    setLimitReached(false); // Reset before new search
     setResults([]); 
 
     try {
@@ -91,9 +93,17 @@ function HomeContent() {
                 query: searchQuery, 
                 location: searchLoc, 
                 user_lat: lat,
-                user_lon: lng
+                user_lon: lng,
+                user_id: user?.id
             }),
         });
+
+        // ADD THIS CHECK FOR THE PAYWALL
+        if (res.status === 403) {
+            setLimitReached(true);
+            setLoading(false);
+            return; // Stop here so we don't throw an error
+        }
 
         if (!res.ok) throw new Error("Search failed");
         const data = await res.json();
@@ -226,6 +236,38 @@ function HomeContent() {
           )}
         </div>
       </div>
+
+      {/* 3. PASTE THIS MODAL AT THE BOTTOM */}
+      {limitReached && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-slate-100 transform transition-all scale-100">
+                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <span className="text-3xl">👑</span>
+                </div>
+                
+                <h2 className="text-2xl font-black text-slate-900 mb-2">Daily Limit Reached</h2>
+                <p className="text-slate-500 mb-8 leading-relaxed">
+                    You've used all your free searches for today. Upgrade to WiseBites Premium for unlimited access and exclusive safety filters.
+                </p>
+
+                <div className="space-y-3">
+                    <button 
+                        onClick={() => alert("This button will link to Stripe Checkout later!")}
+                        className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition-all transform hover:-translate-y-0.5"
+                    >
+                        Upgrade to Premium
+                    </button>
+                    
+                    <button 
+                        onClick={() => setLimitReached(false)}
+                        className="text-sm text-slate-400 font-semibold hover:text-slate-600 transition-colors"
+                    >
+                        Maybe later
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 }

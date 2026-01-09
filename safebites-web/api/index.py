@@ -25,6 +25,9 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 
 app = FastAPI()
 
+## User search limit
+FREE_DAILY_LIMIT = 10  # Free users can perform 10 searches per day
+
 # --- DATA MODELS ---
 class SearchRequest(BaseModel):
     query: str
@@ -32,6 +35,7 @@ class SearchRequest(BaseModel):
     address: Optional[str] = None  
     user_lat: Optional[float] = None
     user_lon: Optional[float] = None
+    user_id: Optional[str] = None
 
 class ReviewRequest(BaseModel):
     place_id: str # Google Place ID
@@ -176,7 +180,7 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         "- Heavily penalize the score for any reports of sickness or cross-contamination.\n\n"
 
         "SUMMARY RULES (STRICT NEUTRALITY):\n"
-        "- OPENING: State the volume of reviews analyzed and reference WiseBites Member counts when present. (e.g., 'Analyzed 13 reviews...').\n"
+        "- OPENING: State the volume of reviews analyzed and reference counts from Google Users and WiseBites Members respectively. (e.g., 'Analyzed 13 reviews...').\n"
         "- ATTRIBUTION: Every claim must be attributed. Use 'Reviewers reported', 'Guests mentioned'.\n"
         "- SCOPE RESTRICTION: Focus EXCLUSIVELY on gluten and celiac safety. Ignore mentions of other allergies (soy, dairy, nuts, etc.) unless they impact gluten safety.\n"
         "- NO SYNTHESIS/CONCLUSION: Do not add connecting phrases like 'allowing for a high level of confidence', "
@@ -349,9 +353,79 @@ def fetch_serpapi_reviews(place_id: str):
         print(f"SerpApi Exception: {str(e)}")
         return []
     
+### keep track of user searches for free tier
+def check_and_update_limit(user_id: str):
+    """
+    Returns True if user is allowed to search.
+    Returns False if they hit the limit.
+    STRICT MODE: Fails if profile is missing (does not auto-create).
+    """
+    
+    if not user_id: return True 
+    
+    try:
+        # 1. Fetch Profile (Safe Method)
+        # We use .limit(1) to always get a list back (e.g. [] or [{data}]).
+        # This avoids the .single() crash and .maybe_single() ambiguity.
+        resp = supabase.table("profiles").select("is_premium, daily_search_count, last_search_date").eq("id", user_id).limit(1).execute()
+        print(resp)
+        # Check if we got data
+        results = resp.data
+        if not results:
+            # STRICT HANDLING: If no profile exists, log it and BLOCK the search.
+            print(f"⛔ Strict Mode: User {user_id} has no profile row. Search blocked.")
+            return False 
+
+        profile = results[0]
+
+        # --- NORMAL GATE LOGIC ---
+        is_premium = profile.get("is_premium", False)
+        
+        # Premium Users bypass all limits
+        if is_premium:
+            return True
+            
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        last_date = profile.get("last_search_date")
+        current_count = profile.get("daily_search_count", 0)
+
+        # Reset Counter if it's a new day
+        if last_date != today_str:
+            current_count = 0
+            supabase.table("profiles").update({
+                "daily_search_count": 0,
+                "last_search_date": today_str
+            }).eq("id", user_id).execute()
+
+        # Check Limit
+        if current_count >= FREE_DAILY_LIMIT:
+            return False
+
+        # Increment Count
+        supabase.table("profiles").update({
+            "daily_search_count": current_count + 1,
+            "last_search_date": today_str 
+        }).eq("id", user_id).execute()
+
+        return True
+        
+    except Exception as e:
+        print(f"Limit Check Error: {e}")
+        # In strict mode, failing open (True) is usually safer for UX during bugs
+        return True
 
 @app.post("/api/search")
 def search_restaurants(search: SearchRequest):
+    # --- NEW: PREMIUM GATE ---
+    if search.user_id:
+        is_allowed = check_and_update_limit(search.user_id)
+        if not is_allowed:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Daily search limit reached. Upgrade to Premium for unlimited searches."
+            )
+    # -------------------------
+    
     user_lat, user_lon = search.user_lat, search.user_lon
     search_location = search.location
 
