@@ -36,6 +36,7 @@ class SearchRequest(BaseModel):
     user_lat: Optional[float] = None
     user_lon: Optional[float] = None
     user_id: Optional[str] = None
+    sort_by: Optional[str] = "relevant"
 
 class ReviewRequest(BaseModel):
     place_id: str # Google Place ID
@@ -443,7 +444,7 @@ def search_restaurants(search: SearchRequest):
                 "user_lat": user_lat,
                 "user_lon": user_lon,
                 "search_query": search.query,
-                "radius_miles": 30.0 # Match your distance cap
+                "radius_miles": 30.0 # distance cap
             }
             db_resp = supabase.rpc("search_nearby_restaurants", rpc_params).execute()
             if db_resp.data:
@@ -671,15 +672,55 @@ def search_restaurants(search: SearchRequest):
         except Exception as e:
             print(f"Batch Error: {e}")
 
-    # Sort (WiseScore > Distance)
-    def sort_key(x):
-        sb_score = x["wise_bites_score"] if x["wise_bites_score"] is not None else -1
-        dist = x["distance_miles"] or 9999
-        if sb_score > 0: return (0, -sb_score) 
-        else: return (1, dist)
+    # =========================================================
+    # --- ADVANCED SORTING LOGIC ---
+    # =========================================================
+    sort_mode = search.sort_by or "relevant"
 
-    if user_lat: final_list.sort(key=sort_key)
-    else: final_list.sort(key=lambda x: x["rating"], reverse=True)
+    def sort_relevant(x):
+        # 1. Verified Scores First (High -> Low)
+        # 2. Distance Second (Low -> High)
+        wb = x.get("wise_bites_score") or 0
+        dist = x.get("distance_miles") or 9999
+        
+        # Tuple Sort: (HasNoScore?, -Score, Distance)
+        # If WB=8.0: (0, -8.0, dist) -> Smaller 1st item floats to top
+        # If WB=None: (1, 0, dist) -> Larger 1st item sinks
+        has_no_score = 0 if wb > 0 else 1
+        return (has_no_score, -wb, dist)
+
+    def sort_top_rated(x):
+        # 1. Verified Scores First (High -> Low)
+        # 2. Google Ratings Second (High -> Low)
+        wb = x.get("wise_bites_score") or 0
+        rating = x.get("rating") or 0
+        
+        # Verified always beats Unverified.
+        has_no_score = 0 if wb > 0 else 1
+        return (has_no_score, -wb, -rating)
+
+    def sort_distance(x):
+        # Strict Distance (Low -> High)
+        return x.get("distance_miles") or 9999
+
+    def sort_reviews(x):
+        # Most Reviewed (High -> Low)
+        return -(x.get("relevant_count") or 0)
+
+    # APPLY SORT
+    if sort_mode == "top_rated":
+        final_list.sort(key=sort_top_rated) 
+    elif sort_mode == "distance":
+        final_list.sort(key=sort_distance)
+    elif sort_mode == "reviews":
+        final_list.sort(key=sort_reviews)
+    else:
+        # Default / Relevant
+        if user_lat: 
+            final_list.sort(key=sort_relevant)
+        else: 
+            # Fallback if no location data available
+            final_list.sort(key=lambda x: x.get("rating", 0), reverse=True)
 
     return {"results": final_list}
 

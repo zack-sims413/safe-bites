@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { User } from "@supabase/supabase-js";
-import { Search, MapPin, Loader2 } from "lucide-react";
+import { Search, MapPin, Loader2, ShieldCheck, AlignLeft, ArrowDownUp, Star } from "lucide-react";
 import RestaurantCard from "../components/RestaurantCard"; 
 import { createClient } from "../utils/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -43,6 +43,16 @@ function HomeContent() {
   const [checkingProfile, setCheckingProfile] = useState(true);
   const [limitReached, setLimitReached] = useState(false);
 
+  // Handling Sort State and Logic
+  const [sortBy, setSortBy] = useState("relevant"); // 1. State for Sort
+
+  const handleSortChange = (newSort: string) => {   // 2. Helper for Dropdown
+      setSortBy(newSort);
+      if (query || location) {
+          performSearch(query, location, newSort);
+      }
+  };
+
   // --- AUTH & PROFILE CHECK (TRAFFIC COP) ---
   useEffect(() => {
     const checkUserAndProfile = async () => {
@@ -73,7 +83,7 @@ function HomeContent() {
   }, [supabase, router]);
 
   // --- SEARCH FUNCTION ---
-  const performSearch = async (searchQuery: string, searchLoc: string) => {
+  const performSearch = async (searchQuery: string, searchLoc: string, sortOverride?: string) => {
     if (!searchQuery && !searchLoc) return;
     
     setLoading(true);
@@ -81,6 +91,8 @@ function HomeContent() {
     setHasSearched(true);
     setLimitReached(false); // Reset before new search
     setResults([]); 
+
+    const currentSort = sortOverride || sortBy;
 
     try {
         let lat = null;
@@ -94,7 +106,8 @@ function HomeContent() {
                 location: searchLoc, 
                 user_lat: lat,
                 user_lon: lng,
-                user_id: user?.id
+                user_id: user?.id,
+                sort_by: currentSort
             }),
         });
 
@@ -215,13 +228,67 @@ function HomeContent() {
 
       {/* RESULTS SECTION */}
       <div className="max-w-3xl mx-auto px-6 mt-8">
-        {hasSearched && !loading && (
-            <div className="mb-6 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-                    {results.length} Restaurants Found
-                </h3>
+
+      {/* HEADER & SORT PILLS */}
+      {hasSearched && !loading && !error && (
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+                {results.length} Restaurants Found
+            </h3>
+            
+            {/* SORT PILLS */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200 self-start sm:self-auto overflow-x-auto max-w-full no-scrollbar">
+                
+                {/* RELEVANT */}
+                <button 
+                    onClick={() => handleSortChange("relevant")}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                        sortBy === "relevant" 
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                >
+                    <AlignLeft className="w-4 h-4" /> Relevant
+                </button>
+                
+                {/* TOP RATED (Formerly Safety) */}
+                <button 
+                    onClick={() => handleSortChange("top_rated")}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                        sortBy === "top_rated" 
+                        ? "bg-white text-green-700 shadow-sm border border-green-200" 
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                >
+                    <ShieldCheck className="w-4 h-4" /> Top Rated
+                </button>
+
+                {/* NEAREST */}
+                <button 
+                    onClick={() => handleSortChange("distance")}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                        sortBy === "distance" 
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                >
+                    <MapPin className="w-4 h-4" /> Nearest
+                </button>
+
+                {/* MOST REVIEWED */}
+                <button 
+                    onClick={() => handleSortChange("reviews")}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                        sortBy === "reviews" 
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                >
+                    <Star className="w-4 h-4" /> Most Reviewed
+                </button>
             </div>
-        )}
+        </div>
+    )}
 
         <div className="space-y-6 pb-20">
           {results.map((place) => (
