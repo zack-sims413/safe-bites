@@ -160,7 +160,7 @@ function ProfileContent() {
                             { 
                               id: "gluten_intolerant", 
                               label: "Gluten Intolerant / Sensitivity", 
-                              desc: "I avoid gluten, but cross-contact is less critical." 
+                              desc: "I react to gluten and have concerns about cross-contamination." 
                             },
                             { 
                               id: "wheat_allergy", 
@@ -170,7 +170,7 @@ function ProfileContent() {
                             { 
                               id: "other", 
                               label: "Other", 
-                              desc: "Supporting friend or loved one." 
+                              desc: "Supporting a friend or loved one." 
                             }
                         ].map((opt) => (
                             <button

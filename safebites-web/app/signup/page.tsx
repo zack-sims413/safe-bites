@@ -334,7 +334,7 @@ export default function SignUpPage() {
                                 { 
                                   id: "gluten_intolerant", 
                                   label: "Gluten Intolerant / Sensitivity", 
-                                  desc: "I avoid gluten, but cross-contact is less critical." 
+                                  desc: "I react to gluten and have concerns about cross-contamination." 
                                 },
                                 { 
                                   id: "wheat_allergy", 
