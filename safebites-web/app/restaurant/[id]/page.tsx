@@ -7,7 +7,7 @@ import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
   Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
-  Heart, X, Clock, ChevronDown, Camera, AlertTriangle, Share2, Ban
+  Heart, Ban, Clock, ChevronDown, Camera, Share2, Crown, ArrowDownCircle
 } from "lucide-react";
 import Image from "next/image"; // Optimization
 
@@ -40,8 +40,9 @@ interface CommunityReview {
   is_dedicated_gluten_free: boolean;
   is_premium?: boolean;
   image_urls?: string[] | null; // <--- NEW: Images
-  profiles?: {                  // <--- NEW: Joined Profile Data
+  profiles?: {
       dietary_preference: string;
+      is_premium: boolean; // <--- NEW: Fetch premium status from profile
   };
 }
 
@@ -66,6 +67,17 @@ export default function RestaurantDetailsPage() {
   const [actionLoading, setActionLoading] = useState(false);
 
   const [showHours, setShowHours] = useState(false);
+
+  // --- NAVIGATION HELPER ---
+  const scrollToSection = (sectionId: string) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+        // Offset for sticky headers if you have them, otherwise standard scroll
+        const yOffset = -100; 
+        const y = element.getBoundingClientRect().top + window.pageYOffset + yOffset;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+    }
+  };
 
   // --- LOGIC: Check User Status ---
   const checkUserStatus = useCallback(async () => {
@@ -152,24 +164,54 @@ export default function RestaurantDetailsPage() {
     const { data: { user } } = await supabase.auth.getUser();
 
     // A. Fetch Community Reviews (UPDATED QUERY)
-    // We now select profiles(dietary_preference) to get the user sensitivity
-    const { data: userReviews } = await supabase
+    // We now select public_profiles(dietary_preference) to get the user sensitivity
+    const { data: rawReviews, error: reviewError } = await supabase
       .from("user_reviews")
-      .select("*, profiles(dietary_preference)") // <--- JOIN ADDED HERE
+      .select("*") 
       .eq("place_id", id)
       .order("created_at", { ascending: false });
     
-    const safeUserReviews: CommunityReview[] = userReviews || [];
-    setCommunityReviews(safeUserReviews);
+    if (reviewError) console.error("Review fetch error:", reviewError);
+    
+    const safeRawReviews = rawReviews || [];
+
+    // 2. Manual Join: Fetch Public Profile Badges
+    // Collect all unique user IDs from the reviews
+    const userIds = Array.from(new Set(safeRawReviews.map(r => r.user_id)));
+    
+    let profilesMap: Record<string, any> = {};
+    
+    if (userIds.length > 0) {
+        // Query the SAFE VIEW for these users
+        const { data: publicProfiles } = await supabase
+            .from("public_profiles")
+            .select("id, dietary_preference, is_premium")
+            .in("id", userIds);
+            
+        // Create a lookup map for easy access
+        if (publicProfiles) {
+            publicProfiles.forEach(p => {
+                profilesMap[p.id] = p;
+            });
+        }
+    }
+
+    // 3. Merge Data in Frontend
+    const mergedReviews: CommunityReview[] = safeRawReviews.map(r => ({
+        ...r,
+        profiles: profilesMap[r.user_id] || null // Attach the badge data manually
+    }));
+
+    setCommunityReviews(mergedReviews);
 
     // B. Aggregate Photos
-    const photos = safeUserReviews
+    const photos = mergedReviews
         .flatMap(r => r.image_urls || [])
         .filter(url => url && url.length > 0);
     setAllPhotos(photos);
 
-    if (user && safeUserReviews.length > 0) {
-        const myReview = safeUserReviews.find((r) => r.user_id === user.id);
+    if (user && mergedReviews.length > 0) {
+        const myReview = mergedReviews.find((r) => r.user_id === user.id);
         setCurrentUserReview(myReview || null);
     }
 
@@ -183,7 +225,7 @@ export default function RestaurantDetailsPage() {
         restaurantData.ai_safety_score, 
         restaurantData.relevant_count, 
         safetyRating, 
-        safeUserReviews 
+        mergedReviews 
       );
       setCalculatedScore(score);
 
@@ -353,7 +395,9 @@ export default function RestaurantDetailsPage() {
           case 'asymptomatic_celiac': return 'Asymptomatic Celiac';
           case 'gluten_intolerant': return 'Gluten Intolerant';
           case 'wheat_allergy': return 'Wheat Allergy';
-          default: return null;
+          case 'other': return 'Supporter';
+          // Map "other" to something descriptive
+          default: return val.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
       }
   };
 
@@ -457,6 +501,22 @@ export default function RestaurantDetailsPage() {
             </div>
         </div>
 
+        {/* --- NEW: JUMP NAVIGATION --- */}
+        <div className="flex flex-wrap items-center gap-3 mb-12 border-b border-slate-100 pb-6">
+            <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider mr-1">Quick Links:</span>
+            <button onClick={() => scrollToSection('review-form')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-50 text-slate-700 text-sm font-bold hover:bg-slate-100 transition-colors">
+                <MessageSquare className="w-4 h-4 text-green-600" /> Write Review
+            </button>
+            <button onClick={() => scrollToSection('community-reviews')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-50 text-slate-700 text-sm font-bold hover:bg-slate-100 transition-colors">
+                <User className="w-4 h-4 text-blue-600" /> Community Reviews
+            </button>
+            {sortedGoogleReviews.length > 0 && (
+                <button onClick={() => scrollToSection('google-reviews')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-50 text-slate-700 text-sm font-bold hover:bg-slate-100 transition-colors">
+                    <Quote className="w-4 h-4 text-amber-500" /> Google Mentions
+                </button>
+            )}
+        </div>
+
         {/* --- NEW: USER PHOTOS GALLERY --- */}
         <section className="mb-12">
             <h2 className="text-2xl font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -483,39 +543,60 @@ export default function RestaurantDetailsPage() {
         {/* REVIEWS SECTION */}
         <div className="space-y-12">
             <section className="grid lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-5">
+                {/* --- ADDED ID HERE FOR JUMP NAV --- */}
+                <div id="review-form" className="lg:col-span-5">
                    <div className="sticky top-24">
                       {/* @ts-ignore */}
                       <ReviewForm placeId={place.place_id} onReviewSubmitted={handleReviewSubmitted} existingReview={currentUserReview} />
                    </div>
                 </div>
                 <div className="lg:col-span-7 space-y-6">
-                    <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                    <h2 id="community-reviews" className="text-2xl font-bold text-slate-900 flex items-center gap-2 scroll-mt-24">
                         Community Reviews <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{communityReviews.length}</span>
                     </h2>
                     {communityReviews.length === 0 ? (
                         <div className="p-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center text-slate-500"><p>Be the first to review this spot!</p></div>
                     ) : (
                         communityReviews.map((review) => {
-                            // Sensitivity Label
                             const sensitivityLabel = getSensitivityLabel(review.profiles?.dietary_preference);
+                            // Determine Premium Status from Joined Profile
+                            const isPremiumMember = review.profiles?.is_premium === true;
 
                             return (
-                                <div key={review.id} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
-                                    <div className="flex justify-between items-start mb-3">
+                                <div key={review.id} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm relative overflow-hidden">
+                                    {/* Premium Background Accent */}
+                                    {isPremiumMember && <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-100 to-transparent opacity-50 -mr-8 -mt-8 rounded-full pointer-events-none" />}
+                                    
+                                    <div className="flex justify-between items-start mb-3 relative z-10">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200"><User className="w-5 h-5 text-slate-400" /></div>
+                                            {/* User Icon: Gold for Premium, Grey for Free */}
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${isPremiumMember ? "bg-amber-50 border-amber-200" : "bg-slate-100 border-slate-200"}`}>
+                                                {isPremiumMember ? <Crown className="w-5 h-5 text-amber-500" /> : <User className="w-5 h-5 text-slate-400" />}
+                                            </div>
                                             <div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-bold text-slate-900">{currentUserReview?.id === review.id ? "You" : "WiseBites Member"}</span>
-                                                    {/* NEW: Sensitivity Badge */}
+                                                {/* Name & Badges Row */}
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className={`text-sm font-bold ${isPremiumMember ? "text-slate-900" : "text-slate-700"}`}>
+                                                        {currentUserReview?.id === review.id ? "You" : "WiseBites Member"}
+                                                    </span>
+                                                    
+                                                    {/* NEW: Explicit WiseBites+ Badge */}
+                                                    {isPremiumMember && (
+                                                        <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded shadow-sm">
+                                                            WiseBites+
+                                                        </span>
+                                                    )}
+
+                                                    {/* Dietary Badge (Now visible for everyone after SQL fix) */}
                                                     {sensitivityLabel && (
-                                                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${isPremiumMember ? "bg-slate-800 text-white border-slate-800" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
                                                             {sensitivityLabel}
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div className="flex items-center gap-2 mt-0.5">
+                                                
+                                                {/* Date & Rating Row */}
+                                                <div className="flex items-center gap-2 mt-1">
                                                     <div className="flex text-amber-400">{[...Array(review.rating)].map((_, i) => (<Star key={i} className="w-3 h-3 fill-current" />))}</div>
                                                     <span className="text-xs text-slate-400 font-medium">• {new Date(review.created_at).toLocaleDateString()}</span>
                                                 </div>
@@ -554,7 +635,9 @@ export default function RestaurantDetailsPage() {
 
             {sortedGoogleReviews.length > 0 && (
                 <section>
-                    <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">Mentioned Reviews <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">From Google</span></h2>
+                    <h2 id="google-reviews" className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2 scroll-mt-24">
+                        Mentioned Reviews <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">From Google</span>
+                    </h2>
                     <div className="grid gap-4 md:grid-cols-2">
                         {sortedGoogleReviews.map((review: any, i: number) => (
                             <div key={i} className="p-5 rounded-xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-shadow">
