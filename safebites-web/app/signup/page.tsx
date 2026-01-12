@@ -153,8 +153,8 @@ export default function SignUpPage() {
                 <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center font-bold text-slate-900">W</div>
                 <span className="text-xl font-bold">WiseBites</span>
             </div>
-            <h1 className="text-4xl font-black mb-6 leading-tight">Find safe food, faster.</h1>
-            <p className="text-slate-400 text-lg mb-12">Stop guessing. Start eating with confidence using our 3-layer safety check.</p>
+            <h1 className="text-4xl font-black mb-6 leading-tight">See what people like you are saying — without digging through hundreds of reviews.</h1>
+            <p className="text-slate-400 text-lg mb-12">WiseBites summarizes gluten-related experiences so you can compare restaurants faster.</p>
         
             <div className="space-y-8">
                 <div className="flex items-start gap-4">
@@ -162,8 +162,8 @@ export default function SignUpPage() {
                         <ShieldCheck className="w-5 h-5 text-green-400" />
                     </div>
                     <div>
-                        <h3 className="font-bold text-lg">AI Safety Scores</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed">Our AI scans thousands of reviews to detect hidden cross-contamination risks instantly.</p>
+                        <h3 className="font-bold text-lg">Review-Based Insight Scores</h3>
+                        <p className="text-slate-400 text-sm leading-relaxed">Our AI analyzes gluten-related reviews to surface patterns and consistency across many sources.</p>
                     </div>
                 </div>
 
@@ -172,8 +172,8 @@ export default function SignUpPage() {
                         <Users className="w-5 h-5 text-blue-400" />
                     </div>
                     <div>
-                        <h3 className="font-bold text-lg">Community Verified</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed">See reviews from real people with Celiac and Gluten Intolerance, not just generic foodies.</p>
+                        <h3 className="font-bold text-lg">Community Powered</h3>
+                        <p className="text-slate-400 text-sm leading-relaxed">See feedback from people who actively manage celiac, gluten sensitivity, and wheat allergy — not just general diners.</p>
                     </div>
                 </div>
 
@@ -183,7 +183,7 @@ export default function SignUpPage() {
                     </div>
                     <div>
                         <h3 className="font-bold text-lg">Personalized Search</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed">Filter specifically for dedicated fryers, gluten-free menus, and knowledgeable staff.</p>
+                        <p className="text-slate-400 text-sm leading-relaxed">Filter by things reviewers mention — like dedicated fryers, gluten-free menus, and dedicated gluten-free establishments.</p>
                     </div>
                 </div>
             </div>
@@ -216,7 +216,7 @@ export default function SignUpPage() {
                 <form onSubmit={handleSignUp} className="space-y-6 animate-in slide-in-from-right duration-300">
                     <div>
                         <h2 className="text-3xl font-bold text-slate-900 mb-2">Create Account</h2>
-                        <p className="text-slate-500">Start your safe dining journey today.</p>
+                        <p className="text-slate-500">Create an account to see summarized gluten-related restaurant reviews.</p>
                     </div>
 
                     <div className="space-y-4">
@@ -294,7 +294,7 @@ export default function SignUpPage() {
 
                     <div>
                         <h2 className="text-3xl font-bold text-slate-900 mb-2">Welcome! 👋</h2>
-                        <p className="text-slate-500">Tell us a bit about yourself so we can personalize your results.</p>
+                        <p className="text-slate-500">Tell us a bit about how you relate to gluten so we can better weight and organize what you see.</p>
                     </div>
 
                     <div className="space-y-4">
@@ -324,7 +324,7 @@ export default function SignUpPage() {
                                 { 
                                   id: "symptomatic_celiac", 
                                   label: "Symptomatic Celiac", 
-                                  desc: "I have Celiac Disease and react to cross-contamination." 
+                                  desc: "I have Celiac Disease and often experience symptoms related to cross-contact." 
                                 },
                                 { 
                                   id: "asymptomatic_celiac", 
@@ -378,7 +378,7 @@ export default function SignUpPage() {
                                 className="mt-1 w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
                             />
                             <span className="text-xs text-slate-500 leading-relaxed">
-                                <span className="font-bold text-slate-700">I acknowledge that WiseBites is for informational purposes only and does not constitute medical advice.</span> I assume full responsibility for my dining choices and understand that restaurant conditions can change at any time.
+                                <span className="font-bold text-slate-700">I acknowledge that WiseBites is for informational purposes only and does not constitute medical advice.</span> I understand that dining decisions are my responsibility and understand that restaurant conditions can change at any time.
                             </span>
                         </label>
                     </div>

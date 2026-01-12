@@ -86,7 +86,7 @@ export default function FAQPage() {
                             Never hit a limit
                         </h4>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                            Free users get 3 detailed AI-powered queries per day. Premium users get <strong>unlimited access</strong>. Perfect for heavy research days when planning a vacation, a night out in a new city, or discovering gems at home.
+                            Free users get 5 detailed AI-powered queries per day. Premium users get <strong>unlimited access</strong>. Perfect for heavy research days when planning a vacation, a night out in a new city, or discovering gems at home.
                         </p>
                     </div>
                     <div>

@@ -146,7 +146,7 @@ export default function LandingPage() {
                 "Search restaurants and view gluten-related summaries",
                 "Basic review insight score and key signals",
                 "Favorites & avoid list (limited)",
-                "Daily search limit (you control this)",
+                "Daily search limit",
               ]}
               ctaHref="/login"
               ctaLabel="Create free account"
@@ -163,7 +163,7 @@ export default function LandingPage() {
                 "Advanced gluten & cross-contamination filters",
                 "Unlimited custom lists & collections",
                 "Stronger weighting of high-signal WiseBites reports",
-                "Better discovery for travel and new places (as you expand)",
+                "Better discovery for travel and new places",
               ]}
               ctaHref="/login"
               ctaLabel="Unlock Premium"
