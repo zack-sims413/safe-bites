@@ -148,7 +148,7 @@ export default function LandingPage() {
                 "Favorites & avoid list (limited)",
                 "Daily search limit",
               ]}
-              ctaHref="/login"
+              ctaHref="/signup"
               ctaLabel="Create free account"
               secondaryText="No credit card required"
               highlight={false}
@@ -165,7 +165,7 @@ export default function LandingPage() {
                 "Stronger weighting of high-signal WiseBites reports",
                 "Better discovery for travel and new places",
               ]}
-              ctaHref="/login"
+              ctaHref="/signup"
               ctaLabel="Unlock Premium"
               secondaryText="Cancel anytime"
               highlight={true}
@@ -190,7 +190,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
-                href="/login"
+                href="/signup"
                 className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-slate-900 font-bold text-lg hover:bg-slate-50 transition flex items-center justify-center gap-2"
               >
                 Create a free account <ArrowRight className="w-5 h-5" />

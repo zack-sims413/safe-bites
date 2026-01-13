@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { User } from "@supabase/supabase-js";
-import { Search, MapPin, Loader2, ShieldCheck, AlignLeft, ArrowDownUp, Star } from "lucide-react";
+import { Search, MapPin, Loader2, ShieldCheck, AlignLeft, ArrowDownUp, Star, Filter, Lock } from "lucide-react";
 import RestaurantCard from "../components/RestaurantCard"; 
 import { createClient } from "../utils/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -43,6 +43,16 @@ function HomeContent() {
   const [checkingProfile, setCheckingProfile] = useState(true);
   const [limitReached, setLimitReached] = useState(false);
 
+  // --- PREMIUM FILTER STATE ---
+  const [filters, setFilters] = useState({
+      dedicated_gf: false,
+      dedicated_fryer: false,
+      gf_menu: false
+  });
+  const [showFilters, setShowFilters] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [limitType, setLimitType] = useState<"search" | "feature">("search");
+
   // Handling Sort State and Logic
   const [sortBy, setSortBy] = useState("relevant"); // 1. State for Sort
 
@@ -64,9 +74,11 @@ function HomeContent() {
         // B. Fetch Profile Data (Dietary Prefs)
         const { data: profile } = await supabase
             .from('profiles')
-            .select('dietary_preference')
+            .select('dietary_preference, is_premium')
             .eq('id', user.id)
             .single();
+
+        if (profile) setIsPremium(profile.is_premium || false);
         
         // C. TRAFFIC COP CHECK
         // If they are a Google User who just signed up, this will be null.
@@ -83,7 +95,7 @@ function HomeContent() {
   }, [supabase, router]);
 
   // --- SEARCH FUNCTION ---
-  const performSearch = async (searchQuery: string, searchLoc: string, sortOverride?: string) => {
+  const performSearch = async (searchQuery: string, searchLoc: string, sortOverride?: string, filtersOverride?: any) => {
     if (!searchQuery && !searchLoc) return;
     
     setLoading(true);
@@ -93,6 +105,7 @@ function HomeContent() {
     setResults([]); 
 
     const currentSort = sortOverride || sortBy;
+    const currentFilters = filtersOverride || filters; // <--- Use override if provided
 
     try {
         let lat = null;
@@ -107,7 +120,11 @@ function HomeContent() {
                 user_lat: lat,
                 user_lon: lng,
                 user_id: user?.id,
-                sort_by: currentSort
+                sort_by: currentSort,
+                // --- PASS PREMIUM FILTERS ---
+                filter_dedicated_gf: currentFilters.dedicated_gf,
+                filter_dedicated_fryer: currentFilters.dedicated_fryer,
+                filter_gf_menu: currentFilters.gf_menu
             }),
         });
 
@@ -169,6 +186,25 @@ function HomeContent() {
     );
   }
 
+  // FILTER TOGGLE HANDLER
+  const handleFilterToggle = (key: keyof typeof filters) => {
+      // 1. Premium Check
+      if (!isPremium) {
+          setLimitType("feature"); 
+          setLimitReached(true);
+          setShowFilters(false); // Close menu to show modal clearly
+          return;
+      }
+      
+      // 2. Toggle State
+      const newFilters = { ...filters, [key]: !filters[key] };
+      setFilters(newFilters);
+      
+      // 3. Trigger Search (Wait for state update workaround)
+      // We pass the *newFilters* explicitly because state hasn't updated yet
+      performSearch(query, location, sortBy, newFilters);
+  };
+
   return (
     <div className="min-h-screen bg-white">
       
@@ -229,63 +265,141 @@ function HomeContent() {
       {/* RESULTS SECTION */}
       <div className="max-w-3xl mx-auto px-6 mt-8">
 
-      {/* HEADER & SORT PILLS */}
+      {/* HEADER & CONTROLS */}
       {hasSearched && !loading && !error && (
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-                {results.length} Restaurants Found
-            </h3>
+        <div className="mb-6 space-y-3">
             
-            {/* SORT PILLS */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200 self-start sm:self-auto overflow-x-auto max-w-full no-scrollbar">
-                
-                {/* RELEVANT */}
-                <button 
-                    onClick={() => handleSortChange("relevant")}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
-                        sortBy === "relevant" 
-                        ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
-                >
-                    <AlignLeft className="w-4 h-4" /> Relevant
-                </button>
-                
-                {/* TOP RATED (Formerly Safety) */}
-                <button 
-                    onClick={() => handleSortChange("top_rated")}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
-                        sortBy === "top_rated" 
-                        ? "bg-white text-green-700 shadow-sm border border-green-200" 
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
-                >
-                    <ShieldCheck className="w-4 h-4" /> Top Rated
-                </button>
+            {/* ROW 1: Counts & Filters (Fixed Position) */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+                    {results.length} Restaurants Found
+                </h3>
 
-                {/* NEAREST */}
-                <button 
-                    onClick={() => handleSortChange("distance")}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
-                        sortBy === "distance" 
-                        ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
-                >
-                    <MapPin className="w-4 h-4" /> Nearest
-                </button>
+                {/* FILTER BUTTON (Moved Out of Scroll Area) */}
+                <div className="relative">
+                    <button 
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all shadow-sm border ${
+                            Object.values(filters).some(Boolean) 
+                            ? "bg-green-600 text-white border-green-600 ring-2 ring-green-100" 
+                            : "bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                    >
+                        <Filter className="w-4 h-4" /> Filters
+                        {Object.values(filters).some(Boolean) && (
+                            <span className="flex h-2 w-2 rounded-full bg-white ml-1 animate-pulse" />
+                        )}
+                    </button>
 
-                {/* MOST REVIEWED */}
-                <button 
-                    onClick={() => handleSortChange("reviews")}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
-                        sortBy === "reviews" 
-                        ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
-                >
-                    <Star className="w-4 h-4" /> Most Reviewed
-                </button>
+                    {/* FILTER DROPDOWN (Right Aligned) */}
+                    {showFilters && (
+                        <>
+                            {/* Invisible Backdrop to close on click-outside */}
+                            <div className="fixed inset-0 z-10" onClick={() => setShowFilters(false)} />
+                            
+                            <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 p-5 z-20 animate-in fade-in slide-in-from-top-2">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex justify-between items-center">
+                                    Safety Filters
+                                    {!isPremium && <Lock className="w-3 h-3 text-amber-500" />}
+                                </h4>
+                                <div className="space-y-4">
+                                    {[
+                                        { key: 'dedicated_gf', label: 'Dedicated Gluten Free', sub: '100% GF Facility' },
+                                        { key: 'dedicated_fryer', label: 'Dedicated Fryer', sub: 'No shared oil' },
+                                        { key: 'gf_menu', label: 'Gluten-Free Menu', sub: 'Labeled options' }
+                                    ].map((opt) => (
+                                        <label key={opt.key} className="flex items-center justify-between cursor-pointer group">
+                                            <div>
+                                                <span className="block text-sm font-bold text-slate-700 group-hover:text-green-700 transition-colors">{opt.label}</span>
+                                                <span className="text-xs text-slate-400">{opt.sub}</span>
+                                            </div>
+                                            <div 
+                                                // @ts-ignore
+                                                onClick={(e) => { e.preventDefault(); handleFilterToggle(opt.key); }}
+                                                className={`w-11 h-6 rounded-full relative transition-colors duration-200 ease-in-out shrink-0 ${filters[opt.key as keyof typeof filters] ? "bg-green-500" : "bg-slate-200"}`}
+                                            >
+                                                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${filters[opt.key as keyof typeof filters] ? "translate-x-5" : ""}`} />
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                                
+                                {/* Clear Filters Option */}
+                                {Object.values(filters).some(Boolean) && (
+                                    <button 
+                                        onClick={() => {
+                                            setFilters({ dedicated_gf: false, dedicated_fryer: false, gf_menu: false });
+                                            // Ideally trigger search refresh here too
+                                            performSearch(query, location, sortBy, { dedicated_gf: false, dedicated_fryer: false, gf_menu: false });
+                                        }}
+                                        className="w-full mt-4 py-2 text-xs font-bold text-slate-400 hover:text-red-500 border-t border-slate-100"
+                                    >
+                                        Clear Active Filters
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+            
+            {/* ROW 2: Sort Pills (Scrollable) */}
+            <div className="relative group">
+                {/* Visual Scroll Hint (Fade on right) */}
+                <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none md:hidden" />
+                
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-6 px-6 md:mx-0 md:px-0 no-scrollbar scroll-smooth">
+                    {/* Sort Label (Optional, good for context) */}
+                    <span className="text-xs font-bold text-slate-400 shrink-0 mr-1">Sort by:</span>
+
+                    {/* RELEVANT */}
+                    <button 
+                        onClick={() => handleSortChange("relevant")}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
+                            sortBy === "relevant" 
+                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                    >
+                        <AlignLeft className="w-4 h-4" /> Relevant
+                    </button>
+                    
+                    {/* TOP RATED */}
+                    <button 
+                        onClick={() => handleSortChange("top_rated")}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
+                            sortBy === "top_rated" 
+                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                    >
+                        <ShieldCheck className="w-4 h-4" /> Top Rated
+                    </button>
+
+                    {/* NEAREST */}
+                    <button 
+                        onClick={() => handleSortChange("distance")}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
+                            sortBy === "distance" 
+                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                    >
+                        <MapPin className="w-4 h-4" /> Nearest
+                    </button>
+
+                    {/* MOST REVIEWED */}
+                    <button 
+                        onClick={() => handleSortChange("reviews")}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
+                            sortBy === "reviews" 
+                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                    >
+                        <Star className="w-4 h-4" /> Most Reviewed
+                    </button>
+                </div>
             </div>
         </div>
     )}
@@ -312,9 +426,13 @@ function HomeContent() {
                     <span className="text-3xl">👑</span>
                 </div>
                 
-                <h2 className="text-2xl font-black text-slate-900 mb-2">Daily Limit Reached</h2>
+                <h2 className="text-2xl font-black text-slate-900 mb-2">
+                    {limitType === "feature" ? "Premium Feature Locked" : "Daily Limit Reached"}
+                </h2>
                 <p className="text-slate-500 mb-8 leading-relaxed">
-                    You've used all your free searches for today. Upgrade to WiseBites Premium for unlimited access and exclusive safety filters.
+                    {limitType === "feature" 
+                     ? "Premium seaerch filters like 'Dedicated Fryer' are available exclusively to WiseBites Premium members."
+                     : "You've used all your free searches for today. Upgrade to WiseBites Premium for unlimited access."}
                 </p>
 
                 <div className="space-y-3">

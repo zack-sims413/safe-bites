@@ -26,7 +26,7 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 app = FastAPI()
 
 ## User search limit
-FREE_DAILY_LIMIT = 10  # Free users can perform 10 searches per day
+FREE_DAILY_LIMIT = 5  # Number of queries free users can perform
 
 # --- DATA MODELS ---
 class SearchRequest(BaseModel):
@@ -37,6 +37,10 @@ class SearchRequest(BaseModel):
     user_lon: Optional[float] = None
     user_id: Optional[str] = None
     sort_by: Optional[str] = "relevant"
+    # --- PREMIUM FILTERS ---
+    filter_dedicated_gf: Optional[bool] = False
+    filter_dedicated_fryer: Optional[bool] = False
+    filter_gf_menu: Optional[bool] = False
 
 class ReviewRequest(BaseModel):
     place_id: str # Google Place ID
@@ -444,7 +448,11 @@ def search_restaurants(search: SearchRequest):
                 "user_lat": user_lat,
                 "user_lon": user_lon,
                 "search_query": search.query,
-                "radius_miles": 30.0 # distance cap
+                "radius_miles": 30.0, # distance cap
+                # --- PARAMS for premium filters ---
+                "filter_dedicated_gf": search.filter_dedicated_gf,
+                "filter_dedicated_fryer": search.filter_dedicated_fryer,
+                "filter_gf_menu": search.filter_gf_menu
             }
             db_resp = supabase.rpc("search_nearby_restaurants", rpc_params).execute()
             if db_resp.data:
@@ -492,7 +500,11 @@ def search_restaurants(search: SearchRequest):
                 "wise_bites_score": None,
                 "relevant_count": 0,
                 "is_cached": False,
-                "source": "Google"
+                "source": "Google",
+                ## premium filter fields
+                "is_dedicated_gluten_free": False,
+                "has_dedicated_fryer": False,
+                "has_gf_menu": False
             }
 
     # Process DB Results (Merge into Google Results)
@@ -521,7 +533,10 @@ def search_restaurants(search: SearchRequest):
         wb_count = db_r.get('community_review_count', 0) or 0 # <--- NEW
         total_count = google_count + wb_count
         db_hours = db_r.get('hours_schedule', [])
+        ## premium filter fields
         is_dedicated = db_r.get('is_dedicated_gluten_free', False)
+        has_fryer = db_r.get('has_dedicated_fryer', False)
+        has_menu = db_r.get('has_gf_menu', False)
         
         if pid in combined_results:
             # Update existing entry with DB scores
@@ -533,6 +548,8 @@ def search_restaurants(search: SearchRequest):
             entry["average_safety_rating"] = float(db_r['average_safety_rating']) if db_r['average_safety_rating'] else None
             entry["is_cached"] = is_fresh
             entry["is_dedicated_gluten_free"] = is_dedicated
+            entry["has_dedicated_fryer"] = has_fryer
+            entry["has_gf_menu"] = has_menu
             entry["hours_schedule"] = db_hours if db_hours else entry["hours_schedule"]
             entry["source"] = "Hybrid (Merged)"
         else:
@@ -558,6 +575,8 @@ def search_restaurants(search: SearchRequest):
                 "wise_bites_score": float(db_r['wise_bites_score']) if db_r['wise_bites_score'] else None,
                 "relevant_count": total_count,
                 "is_dedicated_gluten_free": is_dedicated,
+                "has_dedicated_fryer": has_fryer,   
+                "has_gf_menu": has_menu,
                 "hours_schedule": db_hours,
                 "is_cached": is_fresh,
                 "source": "Supabase"
@@ -603,6 +622,8 @@ def search_restaurants(search: SearchRequest):
                     r["ai_safety_score"] = float(cached.get("ai_safety_score") or 0)
                     r["ai_summary"] = cached.get("ai_summary")
                     r["is_dedicated_gluten_free"] = cached.get("is_dedicated_gluten_free", False)
+                    r["has_dedicated_fryer"] = cached.get("has_dedicated_fryer", False)
+                    r["has_gf_menu"] = cached.get("has_gf_menu", False)
 
                     # Counts
                     google_count = int(cached.get("relevant_count") or 0)
@@ -672,6 +693,15 @@ def search_restaurants(search: SearchRequest):
         except Exception as e:
             print(f"Batch Error: {e}")
 
+    if search.filter_dedicated_gf:
+        final_list = [r for r in final_list if r.get("is_dedicated_gluten_free") is True]
+
+    if search.filter_dedicated_fryer:
+        final_list = [r for r in final_list if r.get("has_dedicated_fryer") is True]
+
+    if search.filter_gf_menu:
+        final_list = [r for r in final_list if r.get("has_gf_menu") is True]
+    
     # =========================================================
     # --- ADVANCED SORTING LOGIC ---
     # =========================================================
