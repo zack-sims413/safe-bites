@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useInView } from "react-intersection-observer";
-import { MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info, Heart, ThumbsDown, ThumbsUp, Loader2, X, Ban } from "lucide-react";
+import { 
+  MapPin, Star, ShieldCheck, AlertTriangle, Clock, Info, Heart, 
+  ThumbsDown, ThumbsUp, Loader2, X, Ban, ListPlus, Check, Plus, Lock 
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../utils/supabase/client";
 import Link from "next/link";
@@ -12,8 +15,8 @@ interface Restaurant {
   name: string;
   address: string;
   city: string | null;
-  rating: number; // Generic Google Rating
-  average_safety_rating?: number | null; // NEW: Specific Celiac Rating
+  rating: number; 
+  average_safety_rating?: number | null; 
   distance_miles: number | null;
   is_open_now: boolean | null;
   hours_schedule: string[];
@@ -26,7 +29,28 @@ interface Restaurant {
   is_dedicated_gluten_free?: boolean;
 }
 
-export default function RestaurantCard({ place }: { place: Restaurant }) {
+// --- NEW PROPS INTERFACE ---
+interface RestaurantCardProps {
+  place: Restaurant;
+  initialIsFavorite?: boolean;
+  initialIsDisliked?: boolean;
+  preloadedLists?: any[]; // Passed from parent
+  isPremium?: boolean;
+  preloadedMembership?: Set<string>;
+}
+
+export default function RestaurantCard({ 
+    place, 
+    initialIsFavorite = false, 
+    initialIsDisliked = false,
+    preloadedLists = [],
+    isPremium = false,
+    preloadedMembership = new Set()
+}: RestaurantCardProps) {
+    
+  const supabase = createClient();
+  const router = useRouter();
+  const { ref, inView } = useInView({ triggerOnce: true, threshold: 0.1 });
 
   // --- STATE: Data ---
   const [safetyScore, setSafetyScore] = useState<number | null>(place.ai_safety_score ?? null);
@@ -34,90 +58,111 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
   const [summary, setSummary] = useState<string | null>(place.ai_summary ?? null);
   const [loading, setLoading] = useState(!place.is_cached);
   const [hasFetched, setHasFetched] = useState(place.is_cached || false);
-
-  // --- SCORE INITIALIZATION ---
   const [wiseBitesScore, setWiseBitesScore] = useState<number | null>(place.wise_bites_score ?? null);
 
-  // --- STATE: User Interaction ---
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [isDisliked, setIsDisliked] = useState(false);
+  // --- STATE: User Interaction (Initialized from Props) ---
+  const [isFavorite, setIsFavorite] = useState(initialIsFavorite);
+  const [isDisliked, setIsDisliked] = useState(initialIsDisliked);
   const [actionLoading, setActionLoading] = useState(false);
   const [feedbackStatus, setFeedbackStatus] = useState<"none" | "helpful" | "unhelpful">("none");
 
-  const { ref, inView } = useInView({ triggerOnce: true, threshold: 0.1 });
-  const supabase = createClient();
-  const router = useRouter();
+  // --- STATE: Custom Lists ---
+  const [showListModal, setShowListModal] = useState(false);
+  const [userLists, setUserLists] = useState<any[]>(preloadedLists); // Initialize with passed lists
+  const [containingLists, setContainingLists] = useState<Set<string>>(preloadedMembership);
+  const [listLoading, setListLoading] = useState(false);
+  const [newListName, setNewListName] = useState("");
 
-  // --- 1. CHECK USER STATUS ON LOAD ---
-  useEffect(() => {
-    const checkStatus = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  // NOTE: Removed the per-card useEffect that checked status!
+  // It is no longer needed because data is passed in.
 
-      const { data: favData } = await supabase.from("favorites").select("id").eq("user_id", user.id).eq("place_id", place.place_id).single();
-      if (favData) setIsFavorite(true);
-
-      const { data: dislikeData } = await supabase.from("dislikes").select("id").eq("user_id", user.id).eq("place_id", place.place_id).single();
-      if (dislikeData) setIsDisliked(true);
-    };
-    checkStatus();
-  }, [place.place_id]);
-
-  // --- 2. HANDLE FAVORITE CLICK ---
+  // --- HANDLERS ---
   const toggleFavorite = async () => {
-    setActionLoading(true);
+    // Optimistic Update
+    setIsFavorite(!isFavorite);
+    if (isDisliked) setIsDisliked(false); // Can't be both
+    
+    // Background Sync
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
 
     if (isFavorite) {
       await supabase.from("favorites").delete().eq("user_id", user.id).eq("place_id", place.place_id);
-      setIsFavorite(false);
     } else {
-      if (isDisliked) {
-        await supabase.from("dislikes").delete().eq("user_id", user.id).eq("place_id", place.place_id);
-        setIsDisliked(false);
-      }
+      if (isDisliked) await supabase.from("dislikes").delete().eq("user_id", user.id).eq("place_id", place.place_id);
       await supabase.from("favorites").insert({ user_id: user.id, place_id: place.place_id });
-      setIsFavorite(true);
     }
-    setActionLoading(false);
   };
 
-  // --- 3. HANDLE DISLIKE CLICK ---
   const toggleDislike = async () => {
-    setActionLoading(true);
+    setIsDisliked(!isDisliked);
+    if (isFavorite) setIsFavorite(false);
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
 
     if (isDisliked) {
       await supabase.from("dislikes").delete().eq("user_id", user.id).eq("place_id", place.place_id);
-      setIsDisliked(false);
     } else {
-      if (isFavorite) {
-        await supabase.from("favorites").delete().eq("user_id", user.id).eq("place_id", place.place_id);
-        setIsFavorite(false);
-      }
+      if (isFavorite) await supabase.from("favorites").delete().eq("user_id", user.id).eq("place_id", place.place_id);
       await supabase.from("dislikes").insert({ user_id: user.id, place_id: place.place_id });
-      setIsDisliked(true);
     }
-    setActionLoading(false);
   };
 
-  // --- 4. HANDLE AI FEEDBACK ---
-  const handleAiFeedback = async (isHelpful: boolean) => {
-    if (feedbackStatus !== "none") return;
-    setFeedbackStatus(isHelpful ? "helpful" : "unhelpful");
+  const handleListIconClick = async () => {
+      setShowListModal(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
 
-    try {
-        const { data: { user } } = await supabase.auth.getUser();
-        await supabase.from("ai_feedback").insert({
-            place_id: place.place_id,
-            user_id: user?.id || null,
-            is_helpful: isHelpful
-        });
-    } catch (err) {
-        console.error("Feedback error", err);
-    }
+      // USE PROP DIRECTLY - NO FETCHING
+      if (isPremium) {
+          // If for some reason we have 0 lists (e.g. fresh upgrade), we can try one fetch
+          if (userLists.length === 0) {
+               setListLoading(true);
+               const { data: lists } = await supabase.from('custom_lists').select('*').eq('user_id', user.id).order('name');
+               setUserLists(lists || []);
+               setListLoading(false);
+          }
+          
+          // REMOVED THE MEMBERSHIP FETCH HERE
+          // We rely on 'containingLists' being initialized correctly from 'preloadedMembership'
+          // This makes the UI instant and eliminates the "flash".
+      }
+  };
+
+  const toggleListMembership = async (listId: string) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const isMember = containingLists.has(listId);
+      const newSet = new Set(containingLists);
+
+      if (isMember) {
+          await supabase.from('list_items').delete().eq('list_id', listId).eq('place_id', place.place_id);
+          newSet.delete(listId);
+      } else {
+          await supabase.from('list_items').insert({ list_id: listId, place_id: place.place_id });
+          newSet.add(listId);
+      }
+      setContainingLists(newSet);
+  };
+
+  const createNewList = async () => {
+      if (!newListName.trim()) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: newList, error } = await supabase.from('custom_lists').insert({
+          user_id: user.id,
+          name: newListName.trim()
+      }).select().single();
+
+      if (newList && !error) {
+          await supabase.from('list_items').insert({ list_id: newList.id, place_id: place.place_id });
+          setUserLists([...userLists, newList]);
+          setContainingLists(prev => new Set(prev).add(newList.id));
+          setNewListName("");
+      }
   };
 
   // --- 5. FETCH DATA (Lazy Load) ---
@@ -140,24 +185,24 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       })
         .then((res) => res.json())
         .then((data) => {
-          const aiScore = data.ai_safety_score || 0;
-          const revCount = data.relevant_count || 0;
-          const safetyRating = data.average_safety_rating || 0;
-          
-          setSafetyScore(aiScore);
+          setSafetyScore(data.ai_safety_score || 0);
           setSummary(data.ai_summary);
-          setRelevantCount(revCount);
-          
-          // Just use the server's score.
-          if (data.wise_bites_score && data.wise_bites_score > 0) {
-            setWiseBitesScore(data.wise_bites_score);
-          }
-          
+          setRelevantCount(data.relevant_count || 0);
+          if (data.wise_bites_score && data.wise_bites_score > 0) setWiseBitesScore(data.wise_bites_score);
           setLoading(false);
         })
         .catch(() => setLoading(false));
     }
   }, [inView, hasFetched, place]);
+
+  const handleAiFeedback = async (isHelpful: boolean) => {
+    if (feedbackStatus !== "none") return;
+    setFeedbackStatus(isHelpful ? "helpful" : "unhelpful");
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from("ai_feedback").insert({ place_id: place.place_id, user_id: user?.id || null, is_helpful: isHelpful });
+    } catch (err) { console.error("Feedback error", err); }
+  };
 
   const getScoreColor = (score: number) => {
     if (score >= 8.5) return "bg-emerald-50 text-emerald-700 border-emerald-200 ring-1 ring-emerald-100";
@@ -173,7 +218,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       <div className="p-5 pb-0 relative"> 
         <div className="flex justify-between items-start gap-4">
           <div className="flex-1 min-w-0">
-            {/* NEW: Dedicated GF Badge */}
               {place.is_dedicated_gluten_free && (
                 <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full mb-2 uppercase tracking-wide border border-emerald-200">
                   <ShieldCheck className="w-3 h-3" /> 100% Dedicated GF
@@ -203,10 +247,66 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
         </div>
 
         {/* --- BUTTONS --- */}
-        <div className="flex items-center justify-end gap-2 mb-4 sm:mb-0 sm:absolute sm:top-4 sm:right-4 sm:z-10">
-            <span className="text-[10px] font-bold text-slate-500 bg-white/90 backdrop-blur px-2 py-1.5 rounded-lg shadow-sm border border-slate-100/50">
-                Save to Profile
-            </span>
+        <div className="flex items-center justify-end gap-2 mb-4 sm:mb-0 sm:absolute sm:top-4 sm:right-4 sm:z-10 relative">
+            
+            {/* ADD TO LIST BUTTON */}
+            <div className="relative">
+                <button onClick={handleListIconClick} className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm" title="Add to Custom List">
+                   <ListPlus className="w-5 h-5 text-slate-400 hover:text-blue-500" />
+                </button>
+                
+                {/* --- LIST POPUP MODAL --- */}
+                {showListModal && (
+                    <>
+                    <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowListModal(false)} />
+                    <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-100 p-4 z-50 animate-in fade-in zoom-in-95 origin-top-right">
+                        {listLoading ? (
+                             <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-slate-300" /></div>
+                        ) : !isPremium ? (
+                             // LOCKED STATE
+                             <div className="text-center p-2">
+                                 <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-2"><Lock className="w-5 h-5 text-amber-600" /></div>
+                                 <h4 className="font-bold text-slate-900 text-sm">Premium Feature</h4>
+                                 <p className="text-xs text-slate-500 mb-3">Upgrade to create custom lists like "Date Night" or "NYC Trip".</p>
+                                 <button onClick={() => alert("Upgrade Flow")} className="w-full py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg">Upgrade Now</button>
+                             </div>
+                        ) : (
+                             // LIST SELECTION STATE
+                             <>
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Save to List</h4>
+                                <div className="max-h-48 overflow-y-auto space-y-1 mb-3">
+                                    {userLists.map(list => {
+                                        const isSelected = containingLists.has(list.id);
+                                        return (
+                                            <button 
+                                                key={list.id}
+                                                onClick={() => toggleListMembership(list.id)}
+                                                className={`w-full flex items-center justify-between p-2 rounded-lg text-sm font-medium transition-colors ${isSelected ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50 text-slate-700"}`}
+                                            >
+                                                <span className="truncate">{list.name}</span>
+                                                {isSelected && <Check className="w-4 h-4" />}
+                                            </button>
+                                        );
+                                    })}
+                                    {userLists.length === 0 && <p className="text-xs text-slate-400 italic p-2">No lists yet.</p>}
+                                </div>
+                                <div className="border-t border-slate-100 pt-2 flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        placeholder="New List..." 
+                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs outline-none focus:border-blue-500 text-slate-900"
+                                        value={newListName}
+                                        onChange={(e) => setNewListName(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && createNewList()}
+                                    />
+                                    <button onClick={createNewList} disabled={!newListName.trim()} className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"><Plus className="w-4 h-4" /></button>
+                                </div>
+                             </>
+                        )}
+                    </div>
+                    </>
+                )}
+            </div>
 
             <button onClick={toggleFavorite} disabled={actionLoading} className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm" title="Save to Favorites">
                 {actionLoading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : <Heart className={`w-5 h-5 transition-colors ${isFavorite ? "fill-red-500 text-red-500" : "text-slate-400 hover:text-red-400"}`} />}
@@ -220,7 +320,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
       {/* BOTTOM: AI Analysis Area */}
       <div className="bg-slate-50/50 border-t border-slate-100 p-5 flex-1 flex flex-col">
         <div className="flex items-start justify-between">
-            {/* Left: Score Badge */}
             <div className="flex-shrink-0 mr-4">
                  {loading ? (
                   <div className="w-16 h-12 bg-slate-200 rounded-lg animate-pulse" />
@@ -237,7 +336,6 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
                 )}
             </div>
 
-            {/* Right: AI Summary + Feedback */}
             <div className="flex-1">
                 {loading ? (
                 <div className="space-y-2 mt-1">
@@ -265,12 +363,8 @@ export default function RestaurantCard({ place }: { place: Restaurant }) {
                         <span className="text-[10px] font-bold uppercase opacity-60">Helpful?</span>
                         {feedbackStatus === "none" ? (
                             <div className="flex items-center gap-1">
-                                <button onClick={() => handleAiFeedback(true)} className="p-1 hover:bg-black/5 rounded transition-colors opacity-70 hover:opacity-100" title="Yes">
-                                    <ThumbsUp className="w-3.5 h-3.5" />
-                                </button>
-                                <button onClick={() => handleAiFeedback(false)} className="p-1 hover:bg-black/5 rounded transition-colors opacity-70 hover:opacity-100" title="No">
-                                    <ThumbsDown className="w-3.5 h-3.5" />
-                                </button>
+                                <button onClick={() => handleAiFeedback(true)} className="p-1 hover:bg-black/5 rounded transition-colors opacity-70 hover:opacity-100" title="Yes"><ThumbsUp className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => handleAiFeedback(false)} className="p-1 hover:bg-black/5 rounded transition-colors opacity-70 hover:opacity-100" title="No"><ThumbsDown className="w-3.5 h-3.5" /></button>
                             </div>
                         ) : (
                             <span className="text-[10px] font-bold animate-in fade-in opacity-80">

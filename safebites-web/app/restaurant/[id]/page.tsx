@@ -7,7 +7,7 @@ import ReviewForm from "../../../components/ReviewForm";
 import { 
   Loader2, MapPin, Star, ShieldCheck, ExternalLink, Quote, 
   Calendar, MessageSquare, CheckCircle2, User, ThumbsUp, ThumbsDown,
-  Heart, Ban, Clock, ChevronDown, Camera, Share2, Crown, ArrowDownCircle
+  Heart, Ban, Clock, ChevronDown, Camera, Share2, Crown, ListPlus, Check, Plus, Lock
 } from "lucide-react";
 import Image from "next/image"; // Optimization
 
@@ -68,6 +68,14 @@ export default function RestaurantDetailsPage() {
 
   const [showHours, setShowHours] = useState(false);
 
+  // --- NEW: LIST MODAL STATE ---
+  const [showListModal, setShowListModal] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [userLists, setUserLists] = useState<any[]>([]);
+  const [containingLists, setContainingLists] = useState<Set<string>>(new Set());
+  const [listLoading, setListLoading] = useState(false);
+  const [newListName, setNewListName] = useState("");
+
   // --- NAVIGATION HELPER ---
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId);
@@ -123,6 +131,55 @@ export default function RestaurantDetailsPage() {
     } finally {
         setActionLoading(false);
     }
+  };
+
+  // --- NEW: LIST HANDLERS ---
+  const handleListIconClick = async () => {
+      setListLoading(true);
+      setShowListModal(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
+
+      const { data: profile } = await supabase.from('profiles').select('is_premium').eq('id', user.id).single();
+      const premium = profile?.is_premium || false;
+      setIsPremium(premium);
+
+      if (premium) {
+          const { data: lists } = await supabase.from('custom_lists').select('*').eq('user_id', user.id).order('name');
+          setUserLists(lists || []);
+          const { data: items } = await supabase.from('list_items').select('list_id').eq('place_id', id);
+          const currentIds = new Set((items || []).map((i: any) => i.list_id));
+          setContainingLists(currentIds);
+      }
+      setListLoading(false);
+  };
+
+  const toggleListMembership = async (listId: string) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const isMember = containingLists.has(listId);
+      const newSet = new Set(containingLists);
+      if (isMember) {
+          await supabase.from('list_items').delete().eq('list_id', listId).eq('place_id', id);
+          newSet.delete(listId);
+      } else {
+          await supabase.from('list_items').insert({ list_id: listId, place_id: id });
+          newSet.add(listId);
+      }
+      setContainingLists(newSet);
+  };
+
+  const createNewList = async () => {
+      if (!newListName.trim()) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: newList, error } = await supabase.from('custom_lists').insert({ user_id: user.id, name: newListName.trim() }).select().single();
+      if (newList && !error) {
+          await supabase.from('list_items').insert({ list_id: newList.id, place_id: id });
+          setUserLists([...userLists, newList]);
+          setContainingLists(prev => new Set(prev).add(newList.id));
+          setNewListName("");
+      }
   };
 
   // --- SHARE HANDLER ---
@@ -419,7 +476,6 @@ export default function RestaurantDetailsPage() {
                 <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-500 fill-amber-500" /> {place.rating} Stars on Google</span>
             </div>
 
-            {/* Collapsible Hours */}
             <div className="flex items-start gap-3 text-slate-600 mb-6">
               <Clock className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="flex flex-col">
@@ -428,9 +484,7 @@ export default function RestaurantDetailsPage() {
                  </button>
                  {showHours && (
                      <div className="mt-2 pl-2 border-l-2 border-slate-100 animate-in slide-in-from-top-2 fade-in duration-200">
-                        {place.hours_schedule && place.hours_schedule.length > 0 ? (
-                            <ul className="text-sm space-y-1.5 text-slate-500">{place.hours_schedule.map((day, i) => (<li key={i}>{day}</li>))}</ul>
-                        ) : (<span className="text-sm text-slate-400">Hours not available</span>)}
+                        {place.hours_schedule && place.hours_schedule.length > 0 ? ( <ul className="text-sm space-y-1.5 text-slate-500">{place.hours_schedule.map((day, i) => (<li key={i}>{day}</li>))}</ul> ) : (<span className="text-sm text-slate-400">Hours not available</span>)}
                      </div>
                  )}
               </div>
@@ -439,22 +493,65 @@ export default function RestaurantDetailsPage() {
             <div className="flex flex-col sm:flex-row gap-4 mt-6">
                 <div className="flex items-center gap-3">
                     <button onClick={() => handleToggleAction('save')} disabled={actionLoading} className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${userAction === 'saved' ? "bg-green-100 text-green-700 border border-green-200" : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"}`}>
-                        <Heart className={`w-4 h-4 ${userAction === 'saved' ? "fill-current" : ""}`} /> {userAction === 'saved' ? "Saved to Profile" : "Save to Profile"}
+                        <Heart className={`w-4 h-4 ${userAction === 'saved' ? "fill-current" : ""}`} /> {userAction === 'saved' ? "Saved" : "Save"}
                     </button>
+                    
+                    {/* --- NEW: ADD TO LIST BUTTON --- */}
+                    <div className="relative">
+                        <button onClick={handleListIconClick} className="flex items-center gap-2 px-4 py-2 rounded-full font-medium bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 transition-all">
+                            <ListPlus className="w-4 h-4" /> Add to List
+                        </button>
+
+                        {/* LIST MODAL */}
+                        {showListModal && (
+                            <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowListModal(false)} />
+                            <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-100 p-4 z-50 animate-in fade-in zoom-in-95">
+                                {listLoading ? (
+                                    <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-slate-300" /></div>
+                                ) : !isPremium ? (
+                                    <div className="text-center p-2">
+                                        <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-2"><Lock className="w-5 h-5 text-amber-600" /></div>
+                                        <h4 className="font-bold text-slate-900 text-sm">Premium Feature</h4>
+                                        <p className="text-xs text-slate-500 mb-3">Upgrade to create custom lists.</p>
+                                        <button onClick={() => alert("Upgrade Flow")} className="w-full py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg">Upgrade Now</button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Save to List</h4>
+                                        <div className="max-h-48 overflow-y-auto space-y-1 mb-3">
+                                            {userLists.map(list => {
+                                                const isSelected = containingLists.has(list.id);
+                                                return (
+                                                    <button key={list.id} onClick={() => toggleListMembership(list.id)} className={`w-full flex items-center justify-between p-2 rounded-lg text-sm font-medium transition-colors ${isSelected ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50 text-slate-700"}`}>
+                                                        <span className="truncate">{list.name}</span>
+                                                        {isSelected && <Check className="w-4 h-4" />}
+                                                    </button>
+                                                );
+                                            })}
+                                            {userLists.length === 0 && <p className="text-xs text-slate-400 italic p-2">No lists yet.</p>}
+                                        </div>
+                                        <div className="border-t border-slate-100 pt-2 flex gap-2">
+                                            <input type="text" placeholder="New List..." className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 text-xs outline-none focus:border-blue-500 text-slate-900" value={newListName} onChange={(e) => setNewListName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createNewList()} />
+                                            <button onClick={createNewList} disabled={!newListName.trim()} className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"><Plus className="w-4 h-4" /></button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                            </>
+                        )}
+                    </div>
+                    {/* ------------------------------- */}
+
                     <button onClick={() => handleToggleAction('avoid')} disabled={actionLoading} className={`p-2 rounded-full border transition-all ${userAction === 'avoided' ? "bg-red-50 text-red-600 border-red-200" : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200"}`} title="Add to avoid list">
                         <Ban className="w-5 h-5" />
                     </button>
                 </div>
+                
                 <div className="hidden sm:block w-px h-8 bg-slate-200 self-center mx-2" />
                 
-                {/* SHARE BUTTON */}
-                <button 
-                    onClick={handleShare}
-                    className="flex-none flex items-center gap-2 p-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all whitespace-nowrap"
-                    title="Share this place"
-                >
-                    <Share2 className="w-5 h-5" />
-                    <span className="font-medium">Share This Place</span>
+                <button onClick={handleShare} className="flex-none flex items-center gap-2 p-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all whitespace-nowrap" title="Share this place">
+                    <Share2 className="w-5 h-5" /> <span className="font-medium">Share This Place</span>
                 </button>
 
                 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}&query_place_id=${place.place_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors">

@@ -29,7 +29,7 @@ function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // --- STATE ---
+  // --- STATE ---\
   const [query, setQuery] = useState(searchParams.get("q") || ""); 
   const [location, setLocation] = useState(searchParams.get("loc") || ""); 
   
@@ -39,7 +39,13 @@ function HomeContent() {
   const [hasSearched, setHasSearched] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
-  // Checking profile state to determine if we need to prompt for more info
+  // --- NEW: USER DATA CACHE (Optimization) ---
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [dislikeIds, setDislikeIds] = useState<Set<string>>(new Set());
+  const [userCustomLists, setUserCustomLists] = useState<any[]>([]);
+  const [listMemberships, setListMemberships] = useState<Record<string, Set<string>>>({});
+
+  // Checking profile state
   const [checkingProfile, setCheckingProfile] = useState(true);
   const [limitReached, setLimitReached] = useState(false);
 
@@ -53,10 +59,9 @@ function HomeContent() {
   const [isPremium, setIsPremium] = useState(false);
   const [limitType, setLimitType] = useState<"search" | "feature">("search");
 
-  // Handling Sort State and Logic
-  const [sortBy, setSortBy] = useState("relevant"); // 1. State for Sort
+  const [sortBy, setSortBy] = useState("relevant");
 
-  const handleSortChange = (newSort: string) => {   // 2. Helper for Dropdown
+  const handleSortChange = (newSort: string) => {
       setSortBy(newSort);
       if (query || location) {
           performSearch(query, location, newSort);
@@ -66,12 +71,11 @@ function HomeContent() {
   // --- AUTH & PROFILE CHECK (TRAFFIC COP) ---
   useEffect(() => {
     const checkUserAndProfile = async () => {
-      // A. Get Auth User
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
       if (user) {
-        // B. Fetch Profile Data (Dietary Prefs)
+        // B. Fetch Profile Data
         const { data: profile } = await supabase
             .from('profiles')
             .select('dietary_preference, is_premium')
@@ -80,15 +84,37 @@ function HomeContent() {
 
         if (profile) setIsPremium(profile.is_premium || false);
         
-        // C. TRAFFIC COP CHECK
-        // If they are a Google User who just signed up, this will be null.
         if (!profile?.dietary_preference) {
-            // REDIRECT to profile to finish setup
             router.push('/profile?alert=setup_needed');
-            return; // Stop execution here so we don't turn off loading
+            return; 
         }
+
+        // --- OPTIMIZATION START: Batch Fetch User Data ---
+        // We fetch favorites, dislikes, and lists ONCE here, instead of per-card.
+        const [favs, dislikes, lists, items] = await Promise.all([
+             supabase.from('favorites').select('place_id').eq('user_id', user.id),
+             supabase.from('dislikes').select('place_id').eq('user_id', user.id),
+             // Only fetch lists/items if premium
+             profile?.is_premium ? supabase.from('custom_lists').select('*').eq('user_id', user.id).order('name') : { data: [] },
+             // RLS ensures we only get items for lists owned by the user
+             profile?.is_premium ? supabase.from('list_items').select('place_id, list_id') : { data: [] }
+        ]);
+
+        if (favs.data) setFavoriteIds(new Set(favs.data.map(f => f.place_id)));
+        if (dislikes.data) setDislikeIds(new Set(dislikes.data.map(d => d.place_id)));
+        if (lists.data) setUserCustomLists(lists.data || []);
+        
+        // Process List Items into a Map
+        if (items.data) {
+            const map: Record<string, Set<string>> = {};
+            items.data.forEach((item: any) => {
+                if (!map[item.place_id]) map[item.place_id] = new Set();
+                map[item.place_id].add(item.list_id);
+            });
+            setListMemberships(map);
+        }
+        // --- OPTIMIZATION END ---
       }
-      // D. All good? Let them in.
       setCheckingProfile(false);
     };
     checkUserAndProfile();
@@ -101,11 +127,11 @@ function HomeContent() {
     setLoading(true);
     setError("");
     setHasSearched(true);
-    setLimitReached(false); // Reset before new search
+    setLimitReached(false);
     setResults([]); 
 
     const currentSort = sortOverride || sortBy;
-    const currentFilters = filtersOverride || filters; // <--- Use override if provided
+    const currentFilters = filtersOverride || filters; 
 
     try {
         let lat = null;
@@ -121,18 +147,16 @@ function HomeContent() {
                 user_lon: lng,
                 user_id: user?.id,
                 sort_by: currentSort,
-                // --- PASS PREMIUM FILTERS ---
                 filter_dedicated_gf: currentFilters.dedicated_gf,
                 filter_dedicated_fryer: currentFilters.dedicated_fryer,
                 filter_gf_menu: currentFilters.gf_menu
             }),
         });
 
-        // ADD THIS CHECK FOR THE PAYWALL
         if (res.status === 403) {
             setLimitReached(true);
             setLoading(false);
-            return; // Stop here so we don't throw an error
+            return; 
         }
 
         if (!res.ok) throw new Error("Search failed");
@@ -147,18 +171,15 @@ function HomeContent() {
     }
   };
 
-  // --- URL SYNC EFFECT (FIXED) ---
   useEffect(() => {
     const urlQuery = searchParams.get("q");
     const urlLoc = searchParams.get("loc");
 
     if (urlQuery || urlLoc) {
-        // If params exist, sync inputs and Search
         setQuery(urlQuery || "");
         setLocation(urlLoc || "");
         performSearch(urlQuery || "", urlLoc || "");
     } else {
-        // FIX: If params are missing (Back button hit), RESET EVERYTHING
         setResults([]);
         setHasSearched(false);
         setQuery("");
@@ -166,7 +187,6 @@ function HomeContent() {
     }
   }, [searchParams]);
 
-  // --- HANDLE FORM SUBMIT ---
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams();
@@ -175,9 +195,19 @@ function HomeContent() {
     router.push(`/?${params.toString()}`);
   };
 
-  // --- RENDER ---
+  const handleFilterToggle = (key: keyof typeof filters) => {
+      if (!isPremium) {
+          setLimitType("feature"); 
+          setLimitReached(true);
+          setShowFilters(false);
+          return;
+      }
+      
+      const newFilters = { ...filters, [key]: !filters[key] };
+      setFilters(newFilters);
+      performSearch(query, location, sortBy, newFilters);
+  };
 
-  // 2. BLOCK RENDER UNTIL PROFILE CHECKED
   if (checkingProfile) {
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -186,36 +216,15 @@ function HomeContent() {
     );
   }
 
-  // FILTER TOGGLE HANDLER
-  const handleFilterToggle = (key: keyof typeof filters) => {
-      // 1. Premium Check
-      if (!isPremium) {
-          setLimitType("feature"); 
-          setLimitReached(true);
-          setShowFilters(false); // Close menu to show modal clearly
-          return;
-      }
-      
-      // 2. Toggle State
-      const newFilters = { ...filters, [key]: !filters[key] };
-      setFilters(newFilters);
-      
-      // 3. Trigger Search (Wait for state update workaround)
-      // We pass the *newFilters* explicitly because state hasn't updated yet
-      performSearch(query, location, sortBy, newFilters);
-  };
-
   return (
     <div className="min-h-screen bg-white">
       
       {/* HERO SECTION */}
       <div className="relative bg-slate-900 text-white pt-32 pb-24 px-6 rounded-b-[3rem] shadow-xl overflow-hidden">
-        {/* Background Effects */}
         <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1495147466023-ac5c588e2e94?q=80&w=2574&auto=format&fit=crop')] bg-cover bg-center opacity-20 pointer-events-none" />
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-900 pointer-events-none" />
         
         <div className="relative max-w-4xl mx-auto text-center space-y-6">
-           
            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-white mb-4">
              Wise<span className="text-green-400">Bites</span> 🌾
            </h1>
@@ -223,7 +232,6 @@ function HomeContent() {
              WiseBites uses AI to summarize gluten-related experiences from restaurant reviews, so you don’t have to read them all.
            </p>
 
-           {/* SEARCH BAR */}
            <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row gap-3 mt-10 p-2 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
             <div className="flex-1 relative group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-green-400 transition-colors" />
@@ -262,20 +270,17 @@ function HomeContent() {
         </div>
       </div>
 
-      {/* RESULTS SECTION */}
       <div className="max-w-3xl mx-auto px-6 mt-8">
 
       {/* HEADER & CONTROLS */}
       {hasSearched && !loading && !error && (
         <div className="mb-6 space-y-3">
             
-            {/* ROW 1: Counts & Filters (Fixed Position) */}
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
                     {results.length} Restaurants Found
                 </h3>
 
-                {/* FILTER BUTTON (Moved Out of Scroll Area) */}
                 <div className="relative">
                     <button 
                         onClick={() => setShowFilters(!showFilters)}
@@ -291,10 +296,8 @@ function HomeContent() {
                         )}
                     </button>
 
-                    {/* FILTER DROPDOWN (Right Aligned) */}
                     {showFilters && (
                         <>
-                            {/* Invisible Backdrop to close on click-outside */}
                             <div className="fixed inset-0 z-10" onClick={() => setShowFilters(false)} />
                             
                             <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 p-5 z-20 animate-in fade-in slide-in-from-top-2">
@@ -324,12 +327,10 @@ function HomeContent() {
                                     ))}
                                 </div>
                                 
-                                {/* Clear Filters Option */}
                                 {Object.values(filters).some(Boolean) && (
                                     <button 
                                         onClick={() => {
                                             setFilters({ dedicated_gf: false, dedicated_fryer: false, gf_menu: false });
-                                            // Ideally trigger search refresh here too
                                             performSearch(query, location, sortBy, { dedicated_gf: false, dedicated_fryer: false, gf_menu: false });
                                         }}
                                         className="w-full mt-4 py-2 text-xs font-bold text-slate-400 hover:text-red-500 border-t border-slate-100"
@@ -343,62 +344,23 @@ function HomeContent() {
                 </div>
             </div>
             
-            {/* ROW 2: Sort Pills (Scrollable) */}
             <div className="relative group">
-                {/* Visual Scroll Hint (Fade on right) */}
                 <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none md:hidden" />
-                
                 <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-6 px-6 md:mx-0 md:px-0 no-scrollbar scroll-smooth">
-                    {/* Sort Label (Optional, good for context) */}
                     <span className="text-xs font-bold text-slate-400 shrink-0 mr-1">Sort by:</span>
-
-                    {/* RELEVANT */}
-                    <button 
-                        onClick={() => handleSortChange("relevant")}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
-                            sortBy === "relevant" 
-                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                    >
-                        <AlignLeft className="w-4 h-4" /> Relevant
-                    </button>
-                    
-                    {/* TOP RATED */}
-                    <button 
-                        onClick={() => handleSortChange("top_rated")}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
-                            sortBy === "top_rated" 
-                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                    >
-                        <ShieldCheck className="w-4 h-4" /> Top Rated
-                    </button>
-
-                    {/* NEAREST */}
-                    <button 
-                        onClick={() => handleSortChange("distance")}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
-                            sortBy === "distance" 
-                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                    >
-                        <MapPin className="w-4 h-4" /> Nearest
-                    </button>
-
-                    {/* MOST REVIEWED */}
-                    <button 
-                        onClick={() => handleSortChange("reviews")}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
-                            sortBy === "reviews" 
-                            ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                    >
-                        <Star className="w-4 h-4" /> Most Reviewed
-                    </button>
+                    {[{id: 'relevant', label: 'Relevant', icon: AlignLeft}, {id: 'top_rated', label: 'Top Rated', icon: ShieldCheck}, {id: 'distance', label: 'Nearest', icon: MapPin}, {id: 'reviews', label: 'Most Reviewed', icon: Star}].map(opt => (
+                         <button 
+                            key={opt.id}
+                            onClick={() => handleSortChange(opt.id)}
+                            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
+                                sortBy === opt.id 
+                                ? "bg-slate-900 text-white shadow-md ring-2 ring-slate-100" 
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            }`}
+                        >
+                            <opt.icon className="w-4 h-4" /> {opt.label}
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>
@@ -406,7 +368,17 @@ function HomeContent() {
 
         <div className="space-y-6 pb-20">
           {results.map((place) => (
-            <RestaurantCard key={place.place_id} place={place} />
+            <RestaurantCard 
+                key={place.place_id} 
+                place={place} 
+                // --- PASSING DOWN PRE-FETCHED DATA ---
+                initialIsFavorite={favoriteIds.has(place.place_id)}
+                initialIsDisliked={dislikeIds.has(place.place_id)}
+                preloadedLists={userCustomLists}
+                isPremium={isPremium}
+                preloadedMembership={listMemberships[place.place_id]}
+                // -------------------------------------
+            />
           ))}
           
           {hasSearched && results.length === 0 && !loading && !error && (
@@ -418,7 +390,6 @@ function HomeContent() {
         </div>
       </div>
 
-      {/* 3. PASTE THIS MODAL AT THE BOTTOM */}
       {limitReached && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-slate-100 transform transition-all scale-100">
@@ -431,7 +402,7 @@ function HomeContent() {
                 </h2>
                 <p className="text-slate-500 mb-8 leading-relaxed">
                     {limitType === "feature" 
-                     ? "Premium seaerch filters like 'Dedicated Fryer' are available exclusively to WiseBites Premium members."
+                     ? "Premium search filters like 'Dedicated Fryer' are available exclusively to WiseBites Premium members."
                      : "You've used all your free searches for today. Upgrade to WiseBites Premium for unlimited access."}
                 </p>
 
@@ -457,7 +428,6 @@ function HomeContent() {
   );
 }
 
-// WRAPPER (Required for useSearchParams in Next.js App Router)
 export default function SearchDashboard() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-slate-300" /></div>}>
