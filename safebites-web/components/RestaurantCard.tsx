@@ -201,7 +201,7 @@ export default function RestaurantCard({
     try {
         const { data: { user } } = await supabase.auth.getUser();
         await supabase.from("ai_feedback").insert({ place_id: place.place_id, user_id: user?.id || null, is_helpful: isHelpful });
-    } catch (err) { console.error("Feedback error", err); }
+    } catch (err) { console.error("Feedback error"); }
   };
 
   const getScoreColor = (score: number) => {

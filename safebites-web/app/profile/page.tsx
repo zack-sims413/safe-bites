@@ -71,7 +71,7 @@ function ProfileContent() {
       setMessage("Profile updated successfully! You're ready to eat.");
       router.refresh(); 
     } else {
-      console.error(error);
+      console.error("Profile update failed");
     }
   };
 

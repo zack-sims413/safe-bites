@@ -58,7 +58,7 @@ export default function MyReviewsPage() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Error fetching reviews:", error);
+        console.error("Error fetching reviews");
         setError("Could not load your reviews.");
       } else {
         // Supabase returns the joined data, but TypeScript sometimes needs help asserting it

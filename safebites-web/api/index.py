@@ -10,6 +10,11 @@ from supabase import create_client, Client
 from datetime import datetime, timedelta, timezone
 from groq import Groq
 import json 
+import logging 
+
+# Setup Logger
+logger = logging.getLogger("uvicorn.error") # or just logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # 1. Load Keys
 load_dotenv()
@@ -213,7 +218,7 @@ def analyze_reviews_with_ai(reviews: List[dict]):
         return result.get("score", 5), result.get("summary", "Analysis failed.")
 
     except Exception as e:
-        print(f"Groq AI Error: {e}")
+        logger.error(f"Groq AI Error: {e}")
         return 0, "AI Analysis currently unavailable."
     
 
@@ -330,7 +335,7 @@ def fetch_google_search(query: str, location: str, lat: float = None, lng: float
 
 def fetch_serpapi_reviews(place_id: str):
     if not SERPAPI_KEY:
-        print("Error: Missing SerpApi Key")
+        logger.error("Error: Missing SerpApi Key")
         return []
 
     url = "https://serpapi.com/search"
@@ -344,18 +349,18 @@ def fetch_serpapi_reviews(place_id: str):
     }
 
     try:
-        print(f"Calling SerpApi for Place ID: {place_id}")
+        logger.error(f"Calling SerpApi for Place ID: {place_id}")
         response = requests.get(url, params=params)
         data = response.json()
         
         if "error" in data:
-            print("SerpApi Error:", data["error"])
+            logger.error("SerpApi Error:", data["error"])
             return []
             
         return data.get("reviews", [])
 
     except Exception as e:
-        print(f"SerpApi Exception: {str(e)}")
+        logger.error(f"SerpApi Exception: {str(e)}")
         return []
     
 def check_and_update_limit(user_id: str):
@@ -372,7 +377,7 @@ def check_and_update_limit(user_id: str):
         
         results = resp.data
         if not results:
-            print(f"⛔ Strict Mode: User {user_id} has no profile row. Search blocked.")
+            logger.error(f"⛔ Strict Mode: User {user_id} has no profile row. Search blocked.")
             return False 
 
         profile = results[0]
@@ -403,7 +408,7 @@ def check_and_update_limit(user_id: str):
         return True
         
     except Exception as e:
-        print(f"Limit Check Error: {e}")
+        logger.error(f"Limit Check Error: {e}")
         return True
 
 @app.post("/api/search")
@@ -443,7 +448,7 @@ def search_restaurants(search: SearchRequest):
     db_results = []
     if user_lat and user_lon:
         try:
-            print("Calling Supabase RPC for nearby restaurants...")
+            # print("Calling Supabase RPC for nearby restaurants...")
             rpc_params = {
                 "user_lat": user_lat,
                 "user_lon": user_lon,
@@ -457,9 +462,9 @@ def search_restaurants(search: SearchRequest):
             db_resp = supabase.rpc("search_nearby_restaurants", rpc_params).execute()
             if db_resp.data:
                 db_results = db_resp.data
-            print(f"Supabase returned {len(db_results)} results.")
+            # print(f"Supabase returned {len(db_results)} results.")
         except Exception as e:
-            print(f"DB Search Error: {e}")
+            logger.error(f"DB Search Error: {e}")
 
     # --- 2. MERGE RESULTS ---
     combined_results = {} # Use a dict keyed by place_id to deduplicate
@@ -526,7 +531,7 @@ def search_restaurants(search: SearchRequest):
                 if datetime.now(timezone.utc) - last_updated < timedelta(days=30):
                     is_fresh = True
             except Exception as e:
-                print(f"Date parsing error for {pid}: {e}")
+                logger.error(f"Date parsing error for {pid}: {e}")
 
         # Calculate TOTAL Count (Google + WiseBites)
         google_count = db_r.get('relevant_count', 0) or 0
@@ -686,12 +691,12 @@ def search_restaurants(search: SearchRequest):
                                     
                         except Exception as e:
                             # Non-critical: don't fail the search if this update fails
-                            print(f"Background metadata update failed for {r['place_id']}: {e}")
+                            logger.error(f"Background metadata update failed for {r['place_id']}: {e}")
                     # =======================================================
                     
                     
         except Exception as e:
-            print(f"Batch Error: {e}")
+            logger.error(f"Batch Error: {e}")
 
     if search.filter_dedicated_gf:
         final_list = [r for r in final_list if r.get("is_dedicated_gluten_free") is True]
@@ -828,7 +833,7 @@ def get_reviews(req: ReviewRequest):
                         "is_premium": is_premium
                     })
         except Exception as e:
-            print(f"Error fetching community reviews: {e}")
+            logger.error(f"Error fetching community reviews: {e}")
             
         return formatted, wb_avg, wb_safe_free, wb_safe_premium, wb_dedicated_count, wb_unsafe_free, wb_unsafe_premium, total_count
     
@@ -841,7 +846,7 @@ def get_reviews(req: ReviewRequest):
                 record = data[0]
                 last_updated = datetime.fromisoformat(record["last_updated"].replace('Z', '+00:00'))
                 if datetime.now(timezone.utc) - last_updated < timedelta(days=30): 
-                    print("Returning Cached Data")
+                    # print("Returning Cached Data")
 
                     # A. Get Google Reviews from Cache (Pure)
                     cached_google_reviews = record["reviews"] or []
@@ -866,10 +871,10 @@ def get_reviews(req: ReviewRequest):
                         "source": "Cache (Google) + Live (WiseBites)"
                     }
         except Exception as e:
-            print(f"Supabase Read Error: {e}")
+            logger.error(f"Supabase Read Error: {e}")
 
     # 2. FETCH GOOGLE DATA
-    print("Fetching fresh data from SerpApi...")
+    # print("Fetching fresh data from SerpApi...")
     raw_reviews = fetch_serpapi_reviews(req.place_id)
     
     google_reviews = []
@@ -899,7 +904,7 @@ def get_reviews(req: ReviewRequest):
         avg_safety_rating = round(total_rating_sum / google_relevant_count, 1)
     
     # 3. RUN AI ANALYSIS
-    print("Running AI Analysis...")
+    # print("Running AI Analysis...")
     all_reviews_for_ai = google_reviews + wb_reviews
     ai_score, ai_summary = analyze_reviews_with_ai(all_reviews_for_ai)
 
@@ -943,7 +948,7 @@ def get_reviews(req: ReviewRequest):
         }
         supabase.table("restaurants").upsert(upsert_data).execute()
     except Exception as e:
-        print(f"Supabase Write Error: {e}")
+        logger.error(f"Supabase Write Error: {e}")
 
     return {
         "reviews": google_reviews, 

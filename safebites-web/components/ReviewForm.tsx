@@ -108,7 +108,7 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
               .upload(fileName, file);
 
           if (uploadError) {
-              console.error('Upload failed:', uploadError);
+              console.error('Upload failed');
               throw new Error("Failed to upload image. Please try again.");
           }
 
@@ -211,10 +211,10 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
       }, 2000);
 
     } catch (err: any) { // Add ': any' to access properties
-      console.error("FULL ERROR DETAILS:", err);
-      console.error("Error Message:", err.message);
-      console.error("Supabase Details:", err.details);
-      console.error("Supabase Hint:", err.hint);
+      console.error("FULL ERROR DETAILS:");
+      console.error("Error Message");
+      console.error("Supabase Details");
+      console.error("Supabase Hint");
       setMessage({ type: 'error', text: "Failed to submit review. Please try again." });
     } finally {
       setLoading(false);

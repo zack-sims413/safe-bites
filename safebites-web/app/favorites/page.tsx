@@ -178,7 +178,7 @@ export default function FavoritesPage() {
           });
 
           if (error) {
-              console.error("Supabase Error:", error);
+              console.error("Supabase Error");
               alert(`Failed to create list: ${error.message}`);
               return;
           }
@@ -188,7 +188,7 @@ export default function FavoritesPage() {
           fetchCustomLists(user.id); // Refresh list
 
       } catch (err) {
-          console.error("Unexpected Error:", err);
+          console.error("Unexpected Error");
           alert("An unexpected error occurred.");
       }
   };

@@ -164,7 +164,7 @@ function HomeContent() {
         setResults(data.results || []);
 
     } catch (err) {
-        console.error(err);
+        console.error("Search failed");
         setError("Failed to fetch results. Please try again.");
     } finally {
         setLoading(false);

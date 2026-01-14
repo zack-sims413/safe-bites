@@ -23,7 +23,7 @@ export default function GoogleSignInButton({ nextUrl = "/" }: { nextUrl?: string
       });
       if (error) throw error;
     } catch (error) {
-      console.error("Error logging in with Google:", error);
+      console.error("Error logging in with Google");
       setLoading(false);
     }
   };

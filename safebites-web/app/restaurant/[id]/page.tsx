@@ -127,7 +127,7 @@ export default function RestaurantDetailsPage() {
             }
         }
     } catch (error) {
-        console.error("Error toggling status:", error);
+        console.error("Error toggling status");
     } finally {
         setActionLoading(false);
     }
@@ -202,7 +202,7 @@ export default function RestaurantDetailsPage() {
     } catch (err: any) {
         // FIX: Ignore the error if the user just cancelled the share sheet
         if (err.name !== 'AbortError') {
-            console.error("Error sharing:", err);
+            console.error("Error sharing:");
         }
     }
   };
@@ -213,7 +213,7 @@ export default function RestaurantDetailsPage() {
     try {
         const { data: { user } } = await supabase.auth.getUser();
         await supabase.from("ai_feedback").insert({ place_id: place.place_id, user_id: user?.id || null, is_helpful: isHelpful });
-    } catch (err) { console.error("Feedback error:", err); }
+    } catch (err) { console.error("Feedback error"); }
   };
 
   const fetchData = useCallback(async () => {
@@ -228,7 +228,7 @@ export default function RestaurantDetailsPage() {
       .eq("place_id", id)
       .order("created_at", { ascending: false });
     
-    if (reviewError) console.error("Review fetch error:", reviewError);
+    if (reviewError) console.error("Review fetch error");
     
     const safeRawReviews = rawReviews || [];
 
@@ -334,7 +334,7 @@ export default function RestaurantDetailsPage() {
             }
         }
     } catch (e) { 
-        console.error("Failed to refresh AI analysis", e); 
+        console.error("Failed to refresh AI analysis"); 
     }
     
     // 5. Still call fetchData to refresh the list of community reviews (the text list)
