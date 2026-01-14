@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import { User } from "@supabase/supabase-js";
 import { Search, MapPin, Loader2, ShieldCheck, AlignLeft, ArrowDownUp, Star, Filter, Lock } from "lucide-react";
 import RestaurantCard from "../components/RestaurantCard"; 
@@ -28,6 +28,9 @@ function HomeContent() {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // --- NEW: Scroll Reference ---
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   // --- STATE ---\
   const [query, setQuery] = useState(searchParams.get("q") || ""); 
@@ -187,6 +190,15 @@ function HomeContent() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    // Only scroll if we have searched, aren't loading, have results, and the ref is attached
+    if (hasSearched && !loading && results.length > 0 && resultsRef.current) {
+        setTimeout(() => {
+            resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 100);
+    }
+  }, [results, hasSearched, loading]);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams();
@@ -274,7 +286,7 @@ function HomeContent() {
 
       {/* HEADER & CONTROLS */}
       {hasSearched && !loading && !error && (
-        <div className="mb-6 space-y-3">
+        <div ref={resultsRef} className="mb-6 space-y-3 scroll-mt-32">
             
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">

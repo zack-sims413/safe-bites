@@ -36,7 +36,7 @@ export default function FavoritesPage() {
   const router = useRouter();
   
   // --- STATE ---
-  const [activeTab, setActiveTab] = useState<TabType>('saved');
+  const [activeTab, setActiveTab] = useState<TabType>('lists');
   const [user, setUser] = useState<any>(null);
   const [isPremium, setIsPremium] = useState(false);
 
@@ -243,33 +243,39 @@ export default function FavoritesPage() {
       <div className="max-w-5xl mx-auto px-4 py-8 md:py-12">
         
         {/* --- TABS --- */}
-        <div className="flex p-1 bg-slate-100 rounded-xl mb-8 w-full md:w-fit mx-auto md:mx-0 overflow-x-auto no-scrollbar">
+        <div className="flex p-1 bg-slate-100 rounded-xl mb-8 w-full md:w-fit mx-auto md:mx-0 overflow-x-auto no-scrollbar gap-2 scroll-pl-6">
+            
+            {/* 1. MY LISTS (First) */}
+            <button
+                onClick={() => handleTabChange('lists')}
+                className={`flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                    activeTab === 'lists' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                }`}
+            >
+                <Folder className={`w-4 h-4 ${activeTab === 'lists' ? 'fill-current' : ''}`} /> 
+                My Lists
+            </button>
+
+            {/* 2. SAVED PLACES (Second) */}
             <button
                 onClick={() => handleTabChange('saved')}
-                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                className={`flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
                     activeTab === 'saved' ? "bg-white text-green-700 shadow-sm" : "text-slate-500 hover:text-slate-900"
                 }`}
             >
                 <Heart className={`w-4 h-4 ${activeTab === 'saved' ? 'fill-current' : ''}`} /> 
                 Saved Places ({savedPlaces.length})
             </button>
+
+            {/* 3. AVOID LIST (Third) */}
             <button
                 onClick={() => handleTabChange('avoid')}
-                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+                className={`flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
                     activeTab === 'avoid' ? "bg-white text-red-700 shadow-sm" : "text-slate-500 hover:text-slate-900"
                 }`}
             >
                 <Ban className="w-4 h-4" /> 
                 Avoid List ({avoidPlaces.length})
-            </button>
-            <button
-                onClick={() => handleTabChange('lists')}
-                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
-                    activeTab === 'lists' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-900"
-                }`}
-            >
-                <Folder className={`w-4 h-4 ${activeTab === 'lists' ? 'fill-current' : ''}`} /> 
-                My Lists
             </button>
         </div>
 
