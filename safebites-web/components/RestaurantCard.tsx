@@ -258,12 +258,18 @@ export default function RestaurantCard({
                 {/* --- LIST POPUP MODAL --- */}
                 {showListModal && (
                     <>
-                    <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowListModal(false)} />
-                    <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-100 p-4 z-50 animate-in fade-in zoom-in-95 origin-top-right">
+                    {/* BACKDROP: Dimmed on mobile (to focus attention), transparent on desktop */}
+                    <div 
+                        className="fixed inset-0 z-40 bg-black/25 backdrop-blur-sm md:bg-transparent md:backdrop-blur-none" 
+                        onClick={() => setShowListModal(false)} 
+                    />
+                    
+                    {/* MODAL CONTAINER: Fixed Center (Mobile) vs Absolute Dropdown (Desktop) */}
+                    <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-xs z-50 bg-white rounded-xl shadow-2xl border border-slate-100 p-4 animate-in fade-in zoom-in-95 md:absolute md:top-full md:right-0 md:left-auto md:translate-x-0 md:translate-y-0 md:mt-2 md:w-72 md:shadow-xl">
                         {listLoading ? (
                              <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-slate-300" /></div>
                         ) : !isPremium ? (
-                             // LOCKED STATE
+                             // LOCKED STATE (Unchanged)
                              <div className="text-center p-2">
                                  <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-2"><Lock className="w-5 h-5 text-amber-600" /></div>
                                  <h4 className="font-bold text-slate-900 text-sm">Premium Feature</h4>
@@ -271,7 +277,7 @@ export default function RestaurantCard({
                                  <button onClick={() => alert("Upgrade Flow")} className="w-full py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg text-xs font-bold shadow-md hover:shadow-lg">Upgrade Now</button>
                              </div>
                         ) : (
-                             // LIST SELECTION STATE
+                             // LIST SELECTION STATE (Unchanged)
                              <>
                                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Save to List</h4>
                                 <div className="max-h-48 overflow-y-auto space-y-1 mb-3">
