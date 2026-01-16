@@ -393,6 +393,19 @@ export default function SignUpPage() {
                 </form>
             )}
 
+            <div className="mt-8 pt-6 border-t border-slate-50 text-center">
+                <p className="text-xs text-slate-400 leading-relaxed">
+                    By creating an account, you agree to our{' '}
+                    <Link href="/terms" className="underline hover:text-slate-600 transition-colors">
+                        Terms of Service
+                    </Link>{' '}
+                    and{' '}
+                    <Link href="/privacy" className="underline hover:text-slate-600 transition-colors">
+                        Privacy Policy
+                    </Link>.
+                </p>
+            </div>
+
         </div>
       </div>
     </div>
