@@ -92,7 +92,7 @@ export default function LandingPage() {
             <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4">How WiseBites helps you decide</h2>
             <p className="text-lg text-slate-600 leading-relaxed">
               A well-informed dining decision shouldn’t require reading 80 reviews. WiseBites turns scattered feedback into a
-              clear summary of risks and positive signals.
+              clear summary of past concerns and positive signals.
             </p>
           </div>
 

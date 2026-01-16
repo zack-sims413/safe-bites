@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "../utils/supabase/client";
 import { useRouter, usePathname } from "next/navigation"; // Added usePathname
-import { LogOut, Heart, Search, User, Settings, ChevronDown, BookOpen, HelpCircle, Star, ChevronLeft } from "lucide-react";
+import { LogOut, Heart, Search, User, Settings, ChevronDown, BookOpen, HelpCircle, Star, ChevronLeft, MessageSquare, Newspaper } from "lucide-react";
 
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
@@ -121,14 +121,33 @@ export default function Navbar() {
                         <Settings className="w-4 h-4" /> Profile Settings
                       </Link>
                       <Link href="/favorites" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
-                        <Heart className="w-4 h-4" /> My Favorites
-                      </Link>
-                      <Link href="/faq" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
-                        <HelpCircle className="w-4 h-4" /> FAQ & Privacy
+                        <Heart className="w-4 h-4" /> Saved Places
                       </Link>
                       <Link href="/my-reviews" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
                         <Star className="w-4 h-4" /> My Reviews
                       </Link>
+                      <Link href="/faq" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
+                        <HelpCircle className="w-4 h-4" /> FAQ & Privacy
+                      </Link>
+
+                      <Link href="/get-started" onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
+                        <BookOpen className="w-4 h-4" /> 
+                        Getting Started
+                      </Link>
+
+                      <Link href="/blog" onClick={() => setMenuOpen(false)}className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
+                        <Newspaper className="w-4 h-4" /> 
+                        WiseBites Blog
+                      </Link>
+
+                      <a href="mailto:wisebitesapp@gmail.com?subject=WiseBites%20Feedback" onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
+                        <MessageSquare className="w-4 h-4" /> 
+                        Give Feedback
+                      </a>
+                      <div className="border-t border-slate-50 my-1"></div>
+                      {/* --- NEW LINKS END --- */}
                       
                       <button onClick={async () => { await supabase.auth.signOut(); router.push("/login"); }} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
                         <LogOut className="w-4 h-4" /> Sign Out
