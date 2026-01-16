@@ -207,8 +207,20 @@ export default function LandingPage() {
       </section>
 
       {/* FOOTER */}
-      <footer className="py-12 text-center text-slate-400 text-sm border-t border-slate-100">
-        <p>&copy; {new Date().getFullYear()} WiseBites. Dine out with more confidence.</p>
+      {/* FOOTER */}
+      <footer className="py-12 border-t border-slate-100 bg-slate-50">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
+          <p>&copy; {new Date().getFullYear()} WiseBites. Dine out with more confidence.</p>
+          
+          <div className="flex items-center gap-6">
+            <Link href="/privacy" className="hover:text-slate-900 transition-colors">
+              Privacy Policy
+            </Link>
+            <Link href="/terms" className="hover:text-slate-900 transition-colors">
+              Terms of Service
+            </Link>
+          </div>
+        </div>
       </footer>
     </div>
   );
@@ -319,6 +331,9 @@ function PlanCard({
           Insights are derived from reviews and community reports and may be incomplete or outdated.
         </p>
       </div>
+
+      
+
     </div>
   );
 }
