@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createClient } from "../../utils/supabase/client";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import GoogleSignInButton from "../../components/GoogleSignInButton";
 
@@ -88,16 +88,38 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+          <div className="mb-6">
+            {/* UPDATED: Flex container to hold Label + Forgot Link */}
+            <div className="flex justify-between items-center mb-2">
+                <label className="block text-slate-500 text-sm font-bold">Password</label>
+                <Link 
+                    href="/forgot-password" 
+                    className="text-xs font-bold text-green-600 hover:text-green-700 hover:underline"
+                >
+                    Forgot Password?
+                </Link>
+            </div>
+            
             <input
               type="password"
-              required
-              className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-slate-900"
+              placeholder="••••••••"
+              className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 outline-none transition-all font-medium"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
+
+          {/* --- ERROR MESSAGE DISPLAY --- */}
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-red-600 text-sm font-medium animate-in fade-in zoom-in-95">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>
+                {error === "Invalid login credentials" 
+                  ? "Incorrect email or password. Please try again." 
+                  : error}
+              </span>
+            </div>
+          )}
 
           {message && (
             <div className="p-3 bg-blue-50 text-blue-700 text-sm rounded-lg">
