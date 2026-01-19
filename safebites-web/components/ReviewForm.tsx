@@ -69,10 +69,10 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
       
-      // Validate Size (5MB)
+      // Validate Size (7MB)
       const validFiles = newFiles.filter(file => {
-          if (file.size > 5 * 1024 * 1024) {
-              alert(`"${file.name}" is too large (max 5MB).`);
+          if (file.size > 7 * 1024 * 1024) {
+              alert(`"${file.name}" is too large (max 7MB).`);
               return false;
           }
           return true;
@@ -302,7 +302,7 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
             onChange={(e) => setComment(e.target.value)}
             // UPDATED: Added text-slate-900 for dark text color
             className="w-full px-4 py-3 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all resize-none h-32 text-sm"
-            placeholder="What did you order? How was the service?"
+            placeholder="What did you order? How was the service? Did you experience any gluten-related concerns? More context is better for everyone!"
           />
         </div>
 
@@ -354,7 +354,7 @@ export default function ReviewForm({ placeId, onReviewSubmitted, existingReview 
                 <span className="text-[10px] font-bold text-slate-500 uppercase">Add</span>
             </label>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">Max 5MB per image. Formats: JPG, PNG, WEBP.</p>
+          <p className="text-[10px] text-slate-400 mt-2">Max 7MB per image. Formats: JPG, PNG, WEBP.</p>
         </div>
 
         {/* Submit Button */}

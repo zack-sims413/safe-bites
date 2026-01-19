@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../utils/supabase/client";
-import { Loader2, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck, Users, Search, Mail, LogOut } from "lucide-react"; // Added LogOut icon
+import { Loader2, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck, Users, Search, Mail, LogOut, Star, Check } from "lucide-react"; // Added LogOut icon
 import Link from "next/link";
 import GoogleSignInButton from "../../components/GoogleSignInButton";
 
@@ -12,7 +12,7 @@ export default function SignUpPage() {
   const supabase = createClient();
   
   // Form State
-  const [step, setStep] = useState<1 | 2>(1); 
+  const [step, setStep] = useState<1 | 2 | 3>(1); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verificationSent, setVerificationSent] = useState(false);
@@ -109,11 +109,41 @@ export default function SignUpPage() {
 
         if (profileError) throw profileError;
 
-        router.push("/");
+        setStep(3);
         
     } catch (err: any) {
-        setError(err.message);
+        // If the error is "duplicate key value" it means they already have a profile.
+        // We can just safely move them to step 3 in that case too.
+        if (err.message.includes("duplicate")) {
+            setStep(3);
+        } else {
+            setError(err.message);
+        }
     } finally {
+        setLoading(false);
+    }
+  };
+
+  // NEW: Handle Checkout Logic for Step 3
+  const handleCheckout = async () => {
+    setLoading(true);
+    try {
+        const response = await fetch("/payment/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // Default to Monthly Price for quick sign up
+            body: JSON.stringify({ priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID_MONTHLY }),
+        });
+
+        const data = await response.json();
+        if (data.url) {
+            window.location.href = data.url;
+        } else {
+            console.error("Checkout failed");
+            setLoading(false);
+        }
+    } catch (error) {
+        console.error("Error:", error);
         setLoading(false);
     }
   };
@@ -146,7 +176,7 @@ export default function SignUpPage() {
   return (
     <div className="min-h-screen grid md:grid-cols-2 bg-white">
       
-      {/* LEFT SIDE: Feature Overview */}
+      {/* LEFT SIDE: Feature Overview (Unchanged) */}
       <div className="hidden md:flex flex-col justify-between bg-slate-900 p-12 text-white">
         <div>
             <div className="flex items-center gap-2 mb-8">
@@ -202,6 +232,7 @@ export default function SignUpPage() {
             <div className="flex items-center gap-2 mb-8">
                 <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= 1 ? "bg-green-600" : "bg-slate-100"}`} />
                 <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= 2 ? "bg-green-600" : "bg-slate-100"}`} />
+                <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= 3 ? "bg-green-600" : "bg-slate-100"}`} />
             </div>
 
             {error && (
@@ -249,7 +280,6 @@ export default function SignUpPage() {
                         {loading ? <Loader2 className="animate-spin" /> : <>Get Started <ArrowRight className="w-4 h-4" /></>}
                     </button>
 
-                    {/* --- 2. ADDED GOOGLE BUTTON HERE --- */}
                     <div className="relative my-6">
                         <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-slate-200"></div>
@@ -260,7 +290,6 @@ export default function SignUpPage() {
                     </div>
 
                     <GoogleSignInButton nextUrl="/profile" />
-                    {/* ----------------------------------- */}
 
                     <p className="text-center text-slate-500 text-sm">
                         Already have an account? <Link href="/login" className="text-green-600 font-bold hover:underline">Log in</Link>
@@ -272,7 +301,6 @@ export default function SignUpPage() {
             {step === 2 && (
                 <form onSubmit={handleSaveProfile} className="space-y-6 animate-in slide-in-from-right duration-300">
                     
-                    {/* NEW: USER STATUS BANNER */}
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between mb-6">
                         <div className="flex items-center gap-2 overflow-hidden">
                             <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-xs shrink-0">
@@ -367,7 +395,6 @@ export default function SignUpPage() {
                         </div>
                     </div>
 
-                    {/* --- LIABILITY WAIVER SECTION --- */}
                     <div className="pt-4 pb-2">
                         <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors">
                             <input 
@@ -391,6 +418,69 @@ export default function SignUpPage() {
                         {loading ? <Loader2 className="animate-spin" /> : "Complete Profile"}
                     </button>
                 </form>
+            )}
+
+            {/* --- STEP 3: CHOOSE PLAN (NEW) --- */}
+            {step === 3 && (
+                <div className="space-y-6 animate-in slide-in-from-right duration-300">
+                    <div>
+                        <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                            <CheckCircle2 className="w-6 h-6 text-green-600" />
+                        </div>
+                        <h2 className="text-3xl font-bold text-slate-900 mb-2">You are all set!</h2>
+                        <p className="text-slate-500">Your profile is saved. Choose how you want to start exploring.</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        {/* PREMIUM OPTION */}
+                        <div className="relative border-2 border-green-500 bg-green-50/30 rounded-2xl p-6">
+                            <div className="absolute -top-3 left-6 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                <Star className="w-3 h-3 fill-current" /> Recommended
+                            </div>
+                            <div className="flex justify-between items-start mb-3 mt-1">
+                                <div>
+                                    <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                                        WiseBites+ 
+                                    </h3>
+                                    <p className="text-sm text-slate-500">Unlock full filtering power & unlimited custom lists</p>
+                                </div>
+                                <div className="text-right">
+                                    <div className="font-black text-xl text-slate-900">$4.99</div>
+                                    <div className="text-xs text-slate-500">/month</div>
+                                </div>
+                            </div>
+                            <ul className="space-y-2 mb-6">
+                                <li className="text-sm text-slate-700 flex gap-2"><Check className="w-4 h-4 text-green-600 shrink-0" /> Filter by <strong>Dedicated Fryer</strong></li>
+                                <li className="text-sm text-slate-700 flex gap-2"><Check className="w-4 h-4 text-green-600 shrink-0" /> Filter by <strong>Cross-Contamination</strong></li>
+                                <li className="text-sm text-slate-700 flex gap-2"><Check className="w-4 h-4 text-green-600 shrink-0" /> <strong>Unlimited</strong> saved places</li>
+                            </ul>
+                            <button
+                                onClick={handleCheckout}
+                                disabled={loading}
+                                className="w-full bg-green-600 text-white font-bold py-3.5 rounded-xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-md shadow-green-200"
+                            >
+                                {loading ? <Loader2 className="animate-spin" /> : "Start with WiseBites+"}
+                            </button>
+                        </div>
+
+                        {/* FREE OPTION */}
+                        <div className="border border-slate-200 rounded-2xl p-6 hover:border-slate-300 transition-colors bg-white">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 className="font-bold text-lg text-slate-900">Basic Access</h3>
+                                    <p className="text-sm text-slate-500">Search & summary access</p>
+                                </div>
+                                <div className="font-black text-xl text-slate-900">Free</div>
+                            </div>
+                            <button
+                                onClick={() => router.push("/")}
+                                className="w-full bg-white border border-slate-200 text-slate-600 font-bold py-3.5 rounded-xl hover:bg-slate-50 transition-all"
+                            >
+                                Continue with Free
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             <div className="mt-8 pt-6 border-t border-slate-50 text-center">

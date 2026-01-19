@@ -9,10 +9,10 @@ import {
   Filter,
   Sparkles,
   Smartphone,
-  Check,
-  X,
   Info,
 } from "lucide-react";
+// IMPORT THE PRICING SECTION WE BUILT
+import PricingSection from "./PricingSection"; 
 
 export default function LandingPage() {
   return (
@@ -41,7 +41,7 @@ export default function LandingPage() {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
-            href="/login"
+            href="/signup"
             className="w-full sm:w-auto px-8 py-4 rounded-full bg-green-600 text-white font-bold text-lg hover:bg-green-700 hover:scale-[1.02] transition-all shadow-lg shadow-green-200 flex items-center justify-center gap-2"
           >
             Create a free account <ArrowRight className="w-5 h-5" />
@@ -59,7 +59,6 @@ export default function LandingPage() {
           Free to start • No credit card required • Installable on your phone (PWA)
         </div>
 
-        {/* Gentle disclaimer without sounding scary */}
         <div className="mt-8 max-w-3xl mx-auto text-xs text-slate-500 flex items-start justify-center gap-2">
           <Info className="w-4 h-4 mt-[2px] flex-shrink-0" />
           <p>
@@ -123,60 +122,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FREE VS PREMIUM */}
-      <section className="py-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4">
-              Start free. Upgrade when you want deeper insight.
-            </h2>
-            <p className="text-lg text-slate-600 leading-relaxed">
-              The free tier helps you discover places quickly. Premium unlocks deeper filtering, unlimited lists, and the
-              strongest community signals.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            <PlanCard
-              badge="Free"
-              title="Free account"
-              price="$0"
-              subtitle="Great for quick discovery"
-              features={[
-                "Search restaurants and view gluten-related summaries",
-                "Basic review insight score and key signals",
-                "Favorites & avoid list (limited)",
-                "Daily search limit",
-              ]}
-              ctaHref="/signup"
-              ctaLabel="Create free account"
-              secondaryText="No credit card required"
-              highlight={false}
-            />
-
-            <PlanCard
-              badge="Premium"
-              title="WiseBites Premium"
-              price="$4.99/mo"
-              subtitle="Or $39.99/year (save ~33%)"
-              features={[
-                "Advanced gluten & cross-contamination filters",
-                "Unlimited custom lists & collections",
-                "Stronger weighting of high-signal WiseBites reports",
-                "Better discovery for travel and new places",
-              ]}
-              ctaHref="/signup"
-              ctaLabel="Unlock Premium"
-              secondaryText="Cancel anytime"
-              highlight={true}
-            />
-          </div>
-
-          <div className="mt-10 text-center text-xs text-slate-500">
-            We never guarantee a restaurant is safe. WiseBites summarizes information to help you decide.
-          </div>
-        </div>
-      </section>
+      {/* --- REPLACED: PRICING SECTION --- */}
+      {/* We now use the shared component so logic is consistent everywhere */}
+      <PricingSection />
 
       {/* FINAL CTA */}
       <section className="pb-20">
@@ -206,7 +154,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FOOTER */}
       {/* FOOTER */}
       <footer className="py-12 border-t border-slate-100 bg-slate-50">
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-slate-500">
@@ -242,98 +189,6 @@ function Feature({
       </div>
       <h3 className="text-xl font-bold text-slate-900 mb-3">{title}</h3>
       <p className="text-slate-600 leading-relaxed">{desc}</p>
-    </div>
-  );
-}
-
-function PlanCard({
-  badge,
-  title,
-  price,
-  subtitle,
-  features,
-  ctaHref,
-  ctaLabel,
-  secondaryText,
-  highlight,
-}: {
-  badge: string;
-  title: string;
-  price: string;
-  subtitle: string;
-  features: string[];
-  ctaHref: string;
-  ctaLabel: string;
-  secondaryText: string;
-  highlight: boolean;
-}) {
-  return (
-    <div
-      className={[
-        "rounded-3xl border p-8 shadow-sm bg-white",
-        highlight
-          ? "border-green-200 ring-2 ring-green-100"
-          : "border-slate-200",
-      ].join(" ")}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <span
-          className={[
-            "text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border",
-            highlight
-              ? "bg-green-50 text-green-700 border-green-100"
-              : "bg-slate-50 text-slate-700 border-slate-100",
-          ].join(" ")}
-        >
-          {badge}
-        </span>
-      </div>
-
-      <h3 className="text-2xl font-black tracking-tight text-slate-900 mb-1">
-        {title}
-      </h3>
-
-      <div className="mt-3 flex items-end gap-2">
-        <div className="text-4xl font-black text-slate-900">{price}</div>
-        <div className="text-sm text-slate-500 pb-1">{subtitle}</div>
-      </div>
-
-      <ul className="mt-6 space-y-3 text-slate-700">
-        {features.map((f) => (
-          <li key={f} className="flex items-start gap-2">
-            <Check className="w-5 h-5 text-green-600 mt-[1px]" />
-            <span className="leading-relaxed">{f}</span>
-          </li>
-        ))}
-      </ul>
-
-      <div className="mt-8">
-        <Link
-          href={ctaHref}
-          className={[
-            "w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full font-bold text-lg transition",
-            highlight
-              ? "bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-200"
-              : "bg-slate-900 text-white hover:bg-slate-800",
-          ].join(" ")}
-        >
-          {ctaLabel} <ArrowRight className="w-5 h-5" />
-        </Link>
-        <div className="mt-2 text-xs text-slate-500 text-center">
-          {secondaryText}
-        </div>
-      </div>
-
-      {/* Subtle reassurance: informational only */}
-      <div className="mt-6 text-xs text-slate-500 flex items-start gap-2">
-        <Info className="w-4 h-4 mt-[2px]" />
-        <p>
-          Insights are derived from reviews and community reports and may be incomplete or outdated.
-        </p>
-      </div>
-
-      
-
     </div>
   );
 }

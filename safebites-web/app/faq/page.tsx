@@ -1,4 +1,5 @@
 import { Shield, Lock, FileText, Sparkles, Database, Server, Zap, Filter, Infinity, Smartphone } from "lucide-react";
+import Link from "next/link";
 
 export default function FAQPage() {
   return (
@@ -72,9 +73,12 @@ export default function FAQPage() {
                             </div>
                         </div>
                         
-                        <button className="w-full bg-white text-slate-900 font-black py-4 rounded-xl hover:bg-slate-100 transition-colors shadow-lg">
+                        <Link 
+                            href="/pricing"
+                            className="block w-full bg-white text-slate-900 font-black py-4 rounded-xl hover:bg-slate-100 transition-colors shadow-lg text-center"
+                        >
                             Upgrade to WiseBites+
-                        </button>
+                        </Link>
                     </div>
                 </div>
 
@@ -110,10 +114,10 @@ export default function FAQPage() {
                     <div>
                         <h4 className="font-bold text-slate-900 flex items-center gap-2 mb-2">
                             <Server className="w-4 h-4 text-purple-500" />
-                            Priority Infrastructure
+                            Endless exploration
                         </h4>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                            Your searches run on our fastest, highest-priority servers, ensuring your AI summaries load instantly, even during peak dining hours.
+                            You have the ability to search as many times as you want, discovering new restaurants and hidden gems without restrictions.
                         </p>
                     </div>
                 </div>
@@ -173,6 +177,39 @@ export default function FAQPage() {
                 
                 <div className="space-y-8">
                     <div>
+                    <h3 className="font-bold text-slate-900 mb-2">
+                        How is a restaurant classified as “Dedicated Gluten-Free”?
+                    </h3>
+
+                    <p className="text-slate-600 text-sm leading-relaxed mb-3">
+                        This is a <span className="font-medium">review-based classification</span>, not a guarantee or certification.
+                    </p>
+
+                    <p className="text-slate-600 text-sm leading-relaxed mb-3">
+                        WiseBites uses reviews from WiseBites+ (Premium) members to identify restaurants that are consistently
+                        described as operating a 100% gluten-free environment. To apply this classification, we require both:
+                    </p>
+
+                    <ul className="list-disc pl-5 text-slate-600 text-sm leading-relaxed mb-3">
+                        <li>A minimum number of reviews from WiseBites+ members</li>
+                        <li>
+                        A strong majority of those reviews indicating the restaurant is dedicated gluten-free
+                        </li>
+                    </ul>
+
+                    <p className="text-slate-600 text-sm leading-relaxed mb-3">
+                        This approach helps ensure the classification reflects repeated, gluten-focused experiences from engaged
+                        community members, rather than a single opinion or keyword mention.
+                    </p>
+
+                    <p className="text-slate-600 text-sm leading-relaxed">
+                        Restaurant conditions, ingredients, staff, and kitchen practices can change at any time. Always speak
+                        directly with a manager or chef about your specific dietary needs before ordering.
+                    </p>
+                    </div>
+
+                    
+                    <div>
                         <h3 className="font-bold text-slate-900 mb-2">Where does the review data come from?</h3>
                         <p className="text-slate-600 text-sm leading-relaxed">
                             We aggregate data from two main sources: broad public datasets (like Google Reviews) and our own proprietary WiseBites community reviews. 
@@ -186,6 +223,25 @@ export default function FAQPage() {
                             The truth is, there really aren't many places with a large number of gluten reviews that are recent & relevant. Additionally, with our platform being new, we do not have existing user data we can rely on at scale. 
                             By leveraging existing Google reviews, it helps give us some data and information on restaurants. That being said, we place a more significant weight on reviews submitted on the WiseBites platform, because we
                             have a review form dedicated to answering critical questions or celiac and gluten-intolerant individuals. <br /><br /><strong>The goal</strong> is to grow our own database of reviews over time so that we can rely less on third-party sources.
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3 className="font-bold text-slate-900 mb-2">Why don't you have every review from Google?</h3>
+                        <p className="text-slate-600 text-sm leading-relaxed">
+                            We are limited by Google's APIs and their terms of service, which restrict bulk data extraction. We do our best to only pull reviews related to gluten and celiac concerns to ensure relevance.
+                            However, there are limitations which prevent us from getting all of these gluten/celiac-related reviews. As our own community grows and more users submit reviews directly on WiseBites, 
+                            we will rely less on Google data over time.
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3 className="font-bold text-slate-900 mb-2">How do restaurants get added to WiseBites?</h3>
+                        <p className="text-slate-600 text-sm leading-relaxed">
+                            We pull in restaurants directly from Google based on your search queries. If you do not see a specific restaurant 
+                            try looking it up by name in WiseBites search bar. The restaurant should appear then and be available in searches going forward. 
+                            Given that this is a new platform, you may find yourself having to do this some initially, but as our database grows, this will become less frequent.
+                            If you still do not see a restaurant after searching for it directly, please reach out to us at wisebitesapp@gmail.com
                         </p>
                     </div>
 

@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "../utils/supabase/client";
 import { useRouter, usePathname } from "next/navigation"; // Added usePathname
-import { LogOut, Heart, Search, User, Settings, ChevronDown, BookOpen, HelpCircle, Star, ChevronLeft, MessageSquare, Newspaper } from "lucide-react";
+import { LogOut, Heart, Search, User, Settings, ChevronDown, BookOpen, HelpCircle, Star, ChevronLeft, MessageSquare, Newspaper, Sparkles } from "lucide-react";
 
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
+  const [isPremium, setIsPremium] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
@@ -25,16 +26,27 @@ export default function Navbar() {
   // if (pathname === "/login" || pathname === "/signup") return null;
 
   useEffect(() => {
-    // 1. Get user immediately
     const getUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
+
+      // <--- NEW: FETCH PROFILE STATUS --->
+      if (session?.user) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("is_premium")
+          .eq("id", session.user.id)
+          .single();
+        
+        // If data exists, set premium status
+        setIsPremium(data?.is_premium || false);
+      }
     };
     getUser();
 
-    // 2. Listen for ANY auth change (Login, Logout, Auto-refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      // Optional: re-fetch profile here if you expect status to change while logged in
     });
 
     return () => subscription.unsubscribe();
@@ -117,6 +129,30 @@ export default function Navbar() {
                         <p className="text-sm font-bold text-slate-900 truncate">{user.email}</p>
                       </div>
 
+                      <div className="px-4 py-2">
+                        {/* --- Logic to handle free vs premium --- */}
+                        {isPremium ? (
+                          <Link 
+                            href="/profile" // Links to profile for management
+                            onClick={() => setMenuOpen(false)} 
+                            className="block w-full text-center bg-green-50 text-green-700 border border-green-200 text-xs font-bold py-2 rounded-lg hover:bg-green-100 transition-all flex items-center justify-center gap-2"
+                          >
+                            <Sparkles className="w-3 h-3 fill-current" />
+                            WiseBites+ Member
+                          </Link>
+                        ) : (
+                          <Link 
+                            href="/pricing" 
+                            onClick={() => setMenuOpen(false)} 
+                            className="block w-full text-center bg-gradient-to-r from-green-600 to-emerald-500 text-white text-xs font-bold py-2 rounded-lg hover:shadow-md transition-all"
+                          >
+                            Upgrade to WiseBites+
+                          </Link>
+                        )}
+                        {/* --- End Logic to handle free vs premium --- */}
+                      </div>
+
+                    <div className="border-t border-slate-50 my-1"></div>
                       <Link href="/profile" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 hover:text-green-600 transition-colors">
                         <Settings className="w-4 h-4" /> Profile Settings
                       </Link>

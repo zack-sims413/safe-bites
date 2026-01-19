@@ -48,7 +48,9 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/update-password') &&
     !request.nextUrl.pathname.startsWith('/blog') &&
     !request.nextUrl.pathname.startsWith('/privacy') &&
-    !request.nextUrl.pathname.startsWith('/terms')
+    !request.nextUrl.pathname.startsWith('/terms') &&
+    !request.nextUrl.pathname.startsWith('/pricing') &&
+    !request.nextUrl.pathname.startsWith('/payment')
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

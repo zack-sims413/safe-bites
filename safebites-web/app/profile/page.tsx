@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { createClient } from "../../utils/supabase/client";
-import { Loader2, CheckCircle2, Save, AlertTriangle, Search, ArrowRight } from "lucide-react";
+import { Loader2, CheckCircle2, Save, AlertTriangle, Search, ArrowRight, Star, CreditCard } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -25,6 +25,9 @@ function ProfileContent() {
   const [preference, setPreference] = useState<
     "symptomatic_celiac" | "asymptomatic_celiac" | "gluten_intolerant" | "wheat_allergy" | "other"
   >("symptomatic_celiac");
+  
+  // Subscription State (NEW)
+  const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -41,6 +44,9 @@ function ProfileContent() {
         setFullName(data.full_name || "");
         setBirthday(data.birthday || "");
         setPreference(data.dietary_preference || "symptomatic_celiac");
+        
+        // Check for either Stripe Premium OR Manual Lifetime VIP
+        setIsPremium(data.is_premium || false);
       }
       setLoading(false);
     };
@@ -68,7 +74,7 @@ function ProfileContent() {
     setSaving(false);
     
     if (!error) {
-      setMessage("Profile updated successfully! You're ready to eat.");
+      setMessage("Profile updated successfully!");
       router.refresh(); 
     } else {
       console.error("Profile update failed");
@@ -89,6 +95,49 @@ function ProfileContent() {
                 <h1 className="text-3xl font-black text-slate-900 mb-2">Profile Settings</h1>
                 <p className="text-slate-600 font-medium">Manage your account details and dietary needs.</p>
             </div>
+
+            {/* --- NEW: SUBSCRIPTION STATUS CARD --- */}
+            <div className="mb-10">
+                <h2 className="font-black text-lg text-slate-900 border-b border-slate-100 pb-2 mb-4">Subscription Plan</h2>
+                
+                {isPremium ? (
+                    // PREMIUM STATE
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-6 flex items-center justify-between shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center shrink-0">
+                                <Star className="w-6 h-6 text-green-600 fill-current" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-green-900 text-lg">WiseBites+ Member</h3>
+                                <p className="text-green-700 text-sm">You have full access to all premium features.</p>
+                            </div>
+                        </div>
+                        {/* Note: Once we build the Customer Portal, we can add a "Manage" button here. 
+                           For now, simple status is perfect. 
+                        */}
+                    </div>
+                ) : (
+                    // FREE STATE
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 w-full">
+                            <div className="w-12 h-12 bg-white border border-slate-100 rounded-full flex items-center justify-center shrink-0 text-slate-400">
+                                <CreditCard className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-900 text-lg">Free Plan</h3>
+                                <p className="text-slate-500 text-sm">Basic search & summaries.</p>
+                            </div>
+                        </div>
+                        <Link 
+                            href="/pricing"
+                            className="w-full sm:w-auto px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 whitespace-nowrap shadow-lg shadow-green-200"
+                        >
+                            Upgrade to WiseBites+ <ArrowRight className="w-4 h-4" />
+                        </Link>
+                    </div>
+                )}
+            </div>
+            {/* -------------------------------------- */}
 
             {/* Alert: Action Required */}
             {(!preference || isSetupMode) && !message && (
